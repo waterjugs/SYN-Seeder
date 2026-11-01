@@ -1,0 +1,139 @@
+name: trial builds
+
+# Builds the native trial versions of SynSeeder in probes/ (C# and AutoHotkey,
+# three variants each) and scans every exe on VirusTotal, to find a way to
+# ship an exe that no antivirus flags. Runs on pushes to trial/ branches, or
+# from the Actions tab. Results show as notes on the run and in its summary.
+
+on:
+  push:
+    branches: ["trial/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  csharp:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Build the C# trials
+        shell: bash
+        run: |
+          mkdir -p trials
+          for v in full noupdate bare; do
+            dotnet build probes/cs -c Release -p:Variant=$v -o out/$v --no-incremental -nologo
+            cp out/$v/SynSeeder.exe trials/SynSeeder-cs-$v.exe
+          done
+          ls -l trials
+          sha256sum trials/*
+      - name: Self-test
+        shell: pwsh
+        run: |
+          foreach ($v in "full", "noupdate") {
+            $p = Start-Process -FilePath "trials\SynSeeder-cs-$v.exe" -ArgumentList "--selftest", "$pwd\cs-$v.log" -PassThru
+            $null = $p.Handle
+            $done = $p.WaitForExit(180000)
+            if (-not $done) { $p.Kill() }
+            if (Test-Path "cs-$v.log") { Get-Content "cs-$v.log" }
+            if ($done -and $p.ExitCode -eq 0) { echo "::notice title=C# $v self-test::passed" }
+            else { echo "::warning title=C# $v self-test::failed (finished: $done, exit code: $($p.ExitCode))" }
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: trials-cs
+          path: trials/
+
+  autohotkey:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Get AutoHotkey v2 and Ahk2Exe
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          Invoke-WebRequest https://www.autohotkey.com/download/ahk-v2.zip -OutFile ahk.zip
+          Expand-Archive ahk.zip ahk-tools\ahk
+          gh release download --repo AutoHotkey/Ahk2Exe --pattern "*.zip" --dir ahk2exe-zip
+          Expand-Archive (Get-ChildItem ahk2exe-zip\*.zip | Select-Object -First 1).FullName ahk-tools\ahk2exe
+          Get-ChildItem ahk2exe-zip
+          $base = Get-Item ahk-tools\ahk\AutoHotkey64.exe
+          $compiler = Get-ChildItem ahk-tools\ahk2exe -Recurse -Filter Ahk2Exe.exe | Select-Object -First 1
+          echo "AutoHotkey64.exe $($base.VersionInfo.FileVersion), $($base.Length) bytes, $((Get-FileHash $base).Hash)"
+          echo "Ahk2Exe.exe $($compiler.VersionInfo.FileVersion), $((Get-FileHash $compiler.FullName).Hash)"
+          echo "AHK_BASE=$($base.FullName)" >> $env:GITHUB_ENV
+          echo "AHK2EXE=$($compiler.FullName)" >> $env:GITHUB_ENV
+      - name: Check the scripts load
+        shell: pwsh
+        run: |
+          $bad = $false
+          foreach ($v in "full", "noupdate", "bare") {
+            $p = Start-Process -FilePath $env:AHK_BASE -ArgumentList "/ErrorStdOut", "/Validate", "probes\ahk\$v.ahk" -NoNewWindow -PassThru -RedirectStandardOutput "validate-$v.out" -RedirectStandardError "validate-$v.err"
+            $null = $p.Handle
+            if (-not $p.WaitForExit(60000)) { $p.Kill(); echo "::error title=AutoHotkey $v::validation hung"; $bad = $true; continue }
+            $text = (Get-Content "validate-$v.out", "validate-$v.err" -Raw -ErrorAction SilentlyContinue) -join ""
+            echo "${v}: exit $($p.ExitCode) $text"
+            if ($p.ExitCode -ne 0 -or $text -match "Error|Warning") { echo "::error title=AutoHotkey $v::the script doesn't load cleanly"; $bad = $true }
+          }
+          if ($bad) { exit 1 }
+      - name: Compile the AutoHotkey trials
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force trials | Out-Null
+          foreach ($v in "full", "noupdate", "bare") {
+            $out = "$pwd\trials\SynSeeder-ahk-$v.exe"
+            $p = Start-Process -FilePath $env:AHK2EXE -ArgumentList "/in", "$pwd\probes\ahk\$v.ahk", "/out", $out, "/base", $env:AHK_BASE, "/compress", "0", "/silent", "verbose" -NoNewWindow -PassThru -RedirectStandardOutput "compile-$v.out" -RedirectStandardError "compile-$v.err"
+            $null = $p.Handle
+            if (-not $p.WaitForExit(120000)) { $p.Kill(); echo "::error title=Ahk2Exe $v::compiling hung"; exit 1 }
+            Get-Content "compile-$v.out", "compile-$v.err" -ErrorAction SilentlyContinue
+            if ($p.ExitCode -ne 0 -or -not (Test-Path $out)) { echo "::error title=Ahk2Exe $v::compiling failed (exit code $($p.ExitCode))"; exit 1 }
+          }
+          Get-ChildItem trials | ForEach-Object { echo "$($_.Name) $($_.Length) bytes $((Get-FileHash $_.FullName).Hash)" }
+      - name: Self-test
+        shell: pwsh
+        run: |
+          foreach ($v in "full", "noupdate") {
+            $p = Start-Process -FilePath "trials\SynSeeder-ahk-$v.exe" -ArgumentList "--selftest", "$pwd\ahk-$v.log" -PassThru
+            $null = $p.Handle
+            $done = $p.WaitForExit(120000)
+            if (-not $done) { $p.Kill() }
+            if (Test-Path "ahk-$v.log") { Get-Content "ahk-$v.log" }
+            if ($done -and $p.ExitCode -eq 0) { echo "::notice title=AutoHotkey $v self-test::passed" }
+            else { echo "::warning title=AutoHotkey $v self-test::failed (finished: $done, exit code: $($p.ExitCode))" }
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: trials-ahk
+          path: trials/
+
+  scan:
+    needs: [csharp, autohotkey]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: trials-*
+          merge-multiple: true
+          path: trials
+      - name: Scan on VirusTotal
+        # A flagged trial is a result, not a broken build: the notes on the run say which.
+        continue-on-error: true
+        env:
+          VT_API_KEY: ${{ secrets.VT_API_KEY }}
+        run: python3 tools/vt_scan.py trials/*.exe
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vt-results
+          path: vt-results.json
+          if-no-files-found: ignore
