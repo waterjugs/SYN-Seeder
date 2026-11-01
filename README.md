@@ -7,8 +7,9 @@ the in-game server browser, picks the team with fewer players, creates
 its own infantry squad (it never joins someone else's) and deploys. It
 stays in until the server reaches 80, then closes the game.
 
-Tested end to end on a live PC with game build v1.7 (October 2026), at
-2560x1440 and 1920x1080.
+Tested end to end on a live PC with game build v1.7 (October and November
+2026) at 1920x1080, 2560x1440 and 3840x2160 (4K), and on ultrawide screens
+at 2560x1080, 3440x1440 and 5120x2160.
 
 ## Using it
 
@@ -28,7 +29,7 @@ Tested end to end on a live PC with game build v1.7 (October 2026), at
 It copies itself to `%LOCALAPPDATA%\SynSeeder` and adds a Windows
 scheduled task called *SynSeeder*. The PC needs to be on, signed in and
 unlocked at that time (it runs late if the PC was asleep). Set the game to
-Borderless / Windowed Fullscreen so the seeder can see it. **Seed now** starts a run
+Borderless / Windowed Fullscreen (or Windowed) so the seeder can see it. **Seed now** starts a run
 straight away and **Stop seeding** ends one and closes the game.
 
 ## Terms and privacy
