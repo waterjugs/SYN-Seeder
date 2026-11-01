@@ -1,8 +1,0 @@
-/tmp/claude-0/-home-claude/48d41810-e58a-573d-8bb7-e01d8aff5dcf/scratchpad/cs-out/full/SynSeeder.exe
-/home/claude/syn-seeder/probes/cs/obj/Release/net48/SynSeeder.GeneratedMSBuildEditorConfig.editorconfig
-/home/claude/syn-seeder/probes/cs/obj/Release/net48/SynSeeder.AssemblyInfoInputs.cache
-/home/claude/syn-seeder/probes/cs/obj/Release/net48/SynSeeder.AssemblyInfo.cs
-/home/claude/syn-seeder/probes/cs/obj/Release/net48/SynSeeder.csproj.CoreCompileInputs.cache
-/home/claude/syn-seeder/probes/cs/obj/Release/net48/SynSeeder.exe
-/tmp/claude-0/-home-claude/48d41810-e58a-573d-8bb7-e01d8aff5dcf/scratchpad/cs-out/noupdate/SynSeeder.exe
-/tmp/claude-0/-home-claude/48d41810-e58a-573d-8bb7-e01d8aff5dcf/scratchpad/cs-out/bare/SynSeeder.exe
