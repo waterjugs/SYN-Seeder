@@ -102,9 +102,9 @@ def submit(path: Path, sha256: str, key: str) -> str | None:
     return rescan(sha256, key)
 
 
-def latest(sha256: str, key: str) -> dict:
+def latest(sha256: str, key: str, limit: int = TIMEOUT) -> dict:
     """The file's latest finished scan, in the same shape as an analysis, waiting while it has none yet."""
-    deadline = time.monotonic() + TIMEOUT
+    deadline = time.monotonic() + limit
     while time.monotonic() < deadline:
         try:
             attributes = _request("GET", f"{API}/files/{sha256}", key)["data"]["attributes"]
@@ -116,7 +116,7 @@ def latest(sha256: str, key: str) -> dict:
             return {"stats": attributes.get("last_analysis_stats", {}), "results": attributes["last_analysis_results"],
                     "date": attributes.get("last_analysis_date"), "size": attributes.get("size")}
         time.sleep(60)
-    raise RuntimeError(f"VirusTotal had no finished scan of {sha256} within {TIMEOUT // 60} minutes")
+    raise RuntimeError(f"VirusTotal had no finished scan of {sha256} within {limit // 60} minutes")
 
 
 def wait_for(analysis_id: str, key: str) -> dict:
@@ -208,8 +208,16 @@ def main(argv: list[str]) -> int:
     for name, sha256, path, analysis in pending:
         print(f"Waiting for the engines on {name}...", flush=True)
         try:
-            attributes = wait_for(analysis, key) if analysis else latest(sha256, key)
-            report = summarise(name, sha256, path.stat().st_size if path else None, attributes, analysis is not None)
+            fresh = analysis is not None
+            try:
+                attributes = wait_for(analysis, key) if analysis else latest(sha256, key)
+            except RuntimeError as error:
+                if not analysis or "HTTP 404" not in str(error):
+                    raise
+                # VirusTotal sometimes loses track of a new analysis; its file report still updates.
+                print("  VirusTotal lost this analysis, so this uses its latest finished scan.", flush=True)
+                attributes, fresh = latest(sha256, key, 10 * 60), False
+            report = summarise(name, sha256, path.stat().st_size if path else None, attributes, fresh)
         except (RuntimeError, OSError, KeyError, ValueError) as error:
             print(f"  couldn't scan it: {error}")
             failed = True

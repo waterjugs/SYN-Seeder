@@ -41,40 +41,19 @@ for arg in A_Args
 ; Ctrl+Alt+End stops a run from anywhere, even in game.
 ^!End::State.stopping := true
 
-; Button images: built into the exe, unpacked next to the settings.
-InstallImages() {
-    DirCreate IMAGE_DIR
-    FileInstall "..\..\templates\admin_yes.png", IMAGE_DIR "\admin_yes.png", 1
-    FileInstall "..\..\templates\browser_join.png", IMAGE_DIR "\browser_join.png", 1
-    FileInstall "..\..\templates\browser_refresh.png", IMAGE_DIR "\browser_refresh.png", 1
-    FileInstall "..\..\templates\browser_search.png", IMAGE_DIR "\browser_search.png", 1
-    FileInstall "..\..\templates\create_unit.1080p.png", IMAGE_DIR "\create_unit.1080p.png", 1
-    FileInstall "..\..\templates\create_unit.png", IMAGE_DIR "\create_unit.png", 1
-    FileInstall "..\..\templates\create_unit_button.png", IMAGE_DIR "\create_unit_button.png", 1
-    FileInstall "..\..\templates\deploy_button.png", IMAGE_DIR "\deploy_button.png", 1
-    FileInstall "..\..\templates\faction_nva.png", IMAGE_DIR "\faction_nva.png", 1
-    FileInstall "..\..\templates\force_nva.png", IMAGE_DIR "\force_nva.png", 1
-    FileInstall "..\..\templates\force_us.png", IMAGE_DIR "\force_us.png", 1
-    FileInstall "..\..\templates\game_menu_leave.png", IMAGE_DIR "\game_menu_leave.png", 1
-    FileInstall "..\..\templates\infantry_create.png", IMAGE_DIR "\infantry_create.png", 1
-    FileInstall "..\..\templates\menu_enlist.png", IMAGE_DIR "\menu_enlist.png", 1
-    FileInstall "..\..\templates\roles_confirm.png", IMAGE_DIR "\roles_confirm.png", 1
-    FileInstall "..\..\templates\roles_confirm.select.png", IMAGE_DIR "\roles_confirm.select.png", 1
-    FileInstall "..\..\templates\roles_confirm.title.png", IMAGE_DIR "\roles_confirm.title.png", 1
-    FileInstall "..\..\templates\select_force.png", IMAGE_DIR "\select_force.png", 1
-    FileInstall "..\..\templates\server_row.1080p.png", IMAGE_DIR "\server_row.1080p.png", 1
-    FileInstall "..\..\templates\server_row.2160p.png", IMAGE_DIR "\server_row.2160p.png", 1
-    FileInstall "..\..\templates\server_row.png", IMAGE_DIR "\server_row.png", 1
-    FileInstall "..\..\templates\switch_team.2160p.png", IMAGE_DIR "\switch_team.2160p.png", 1
-    FileInstall "..\..\templates\switch_team.png", IMAGE_DIR "\switch_team.png", 1
-}
+; Button images: built into the exe (see images*.ahk), unpacked next to the settings.
 
-; The width and height stored in a PNG's header.
-PngSize(path) {
+; The width and height stored in a PNG's or BMP's header.
+ImageSize(path) {
     f := FileOpen(path, "r")
-    f.Pos := 16
-    w := (f.ReadUChar() << 24) | (f.ReadUChar() << 16) | (f.ReadUChar() << 8) | f.ReadUChar()
-    h := (f.ReadUChar() << 24) | (f.ReadUChar() << 16) | (f.ReadUChar() << 8) | f.ReadUChar()
+    if SubStr(path, -4) = ".bmp" {
+        f.Pos := 18
+        w := f.ReadInt(), h := Abs(f.ReadInt())
+    } else {
+        f.Pos := 16
+        w := (f.ReadUChar() << 24) | (f.ReadUChar() << 16) | (f.ReadUChar() << 8) | f.ReadUChar()
+        h := (f.ReadUChar() << 24) | (f.ReadUChar() << 16) | (f.ReadUChar() << 8) | f.ReadUChar()
+    }
     f.Close()
     return {w: w, h: h}
 }
@@ -101,8 +80,8 @@ GameRunning() {
 ; Finds a button image in the game's area, scaled from the 1440p it was cut at.
 ; Returns {x, y} of its centre, or "" when it isn't showing.
 FindImage(name, area) {
-    path := IMAGE_DIR "\" name ".png"
-    size := PngSize(path)
+    path := IMAGE_DIR "\" name ImageExt()
+    size := ImageSize(path)
     w := Round(size.w * area.h / 1440), h := Round(size.h * area.h / 1440)
     try {
         if ImageSearch(&x, &y, area.x, area.y, area.x + area.w - 1, area.y + area.h - 1, "*60 *w" w " *h" h " " path)
@@ -453,11 +432,11 @@ SelfTest(logPath) {
     InstallImages()
     missing := ""
     for name in REQUIRED
-        if !FileExist(IMAGE_DIR "\" name ".png")
+        if !FileExist(IMAGE_DIR "\" name ImageExt())
             missing .= " " name
     lines.Push((missing = "" ? "PASS" : "FAIL") " button images" missing)
     ok := ok && missing = ""
-    size := PngSize(IMAGE_DIR "\select_force.png")
+    size := ImageSize(IMAGE_DIR "\select_force" ImageExt())
     good := size.w = 483 && size.h = 59
     lines.Push((good ? "PASS" : "FAIL") " image size " size.w "x" size.h)
     ok := ok && good

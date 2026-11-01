@@ -53,10 +53,11 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 30
     env:
-      # 2.0.18 is the version the old seeder (0/71) was built on; 2.0.31 is the newest 2.0 release.
-      AHK_VERSIONS: "2.0.18 2.0.31"
-      # Each variant with and without SynSeeder's icon and version details (see probes/README.md).
-      AHK_VARIANTS: "bare-plain bare-icon bare-version bare full-plain full-icon full-version full"
+      # 2.0.18 is the version the old seeder (0/71) was built on. Round 2 showed 2.0.31 draws more
+      # flags (Gridinsoft and Microsoft), so round 3 only uses 2.0.18.
+      AHK_VERSIONS: "2.0.18"
+      # Round 3: does the one flag left on the full build come from the button images or the code?
+      AHK_VARIANTS: "bare full full-noimg bare-img full-bmp noupdate"
     steps:
       - uses: actions/checkout@v4
       - name: Get AutoHotkey and Ahk2Exe
@@ -89,6 +90,22 @@ jobs:
           $compiler = Get-ChildItem ahk-tools\ahk2exe -Recurse -Filter Ahk2Exe.exe | Select-Object -First 1
           echo "Ahk2Exe.exe $($compiler.VersionInfo.FileVersion), $((Get-FileHash $compiler.FullName).Hash)"
           echo "AHK2EXE=$($compiler.FullName)" >> $env:GITHUB_ENV
+      - name: Make BMP copies of the button images
+        shell: pwsh
+        run: |
+          # For the full-bmp trial: the same images, stored as uncompressed 24-bit BMP files.
+          Add-Type -AssemblyName System.Drawing
+          New-Item -ItemType Directory -Force build\bmp | Out-Null
+          foreach ($png in Get-ChildItem templates\*.png) {
+            $image = [System.Drawing.Image]::FromFile($png.FullName)
+            $bitmap = New-Object System.Drawing.Bitmap $image.Width, $image.Height, ([System.Drawing.Imaging.PixelFormat]::Format24bppRgb)
+            $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+            $graphics.DrawImage($image, (New-Object System.Drawing.Rectangle 0, 0, $image.Width, $image.Height))
+            $graphics.Dispose()
+            $bitmap.Save("$pwd\build\bmp\$($png.BaseName).bmp", [System.Drawing.Imaging.ImageFormat]::Bmp)
+            $bitmap.Dispose(); $image.Dispose()
+          }
+          Get-ChildItem build\bmp | Measure-Object -Property Length -Sum | ForEach-Object { echo "$($_.Count) BMP files, $($_.Sum) bytes" }
       - name: Check the scripts load
         shell: pwsh
         run: |
@@ -122,14 +139,16 @@ jobs:
         shell: pwsh
         run: |
           foreach ($version in $env:AHK_VERSIONS -split ' ') {
-            $name = "ahk-$version-full"
-            $p = Start-Process -FilePath "trials\SynSeeder-$name.exe" -ArgumentList "--selftest", "$pwd\$name.log" -PassThru
-            $null = $p.Handle
-            $done = $p.WaitForExit(120000)
-            if (-not $done) { $p.Kill() }
-            if (Test-Path "$name.log") { Get-Content "$name.log" }
-            if ($done -and $p.ExitCode -eq 0) { echo "::notice title=AutoHotkey $version full self-test::passed" }
-            else { echo "::warning title=AutoHotkey $version full self-test::failed (finished: $done, exit code: $($p.ExitCode))" }
+            foreach ($v in "full", "full-bmp") {
+              $name = "ahk-$version-$v"
+              $p = Start-Process -FilePath "trials\SynSeeder-$name.exe" -ArgumentList "--selftest", "$pwd\$name.log" -PassThru
+              $null = $p.Handle
+              $done = $p.WaitForExit(120000)
+              if (-not $done) { $p.Kill() }
+              if (Test-Path "$name.log") { Get-Content "$name.log" }
+              if ($done -and $p.ExitCode -eq 0) { echo "::notice title=AutoHotkey $version $v self-test::passed" }
+              else { echo "::warning title=AutoHotkey $version $v self-test::failed (finished: $done, exit code: $($p.ExitCode))" }
+            }
           }
       - uses: actions/upload-artifact@v4
         with:
@@ -153,8 +172,9 @@ jobs:
         continue-on-error: true
         env:
           VT_API_KEY: ${{ secrets.VT_API_KEY }}
-        # The old seeder from SYN-Seed-Script (0/71 when it was last scanned) gets a fresh scan as a control.
-        run: python3 tools/vt_scan.py --rescan feed85baa5887428f63bbc083bbc860388c1e3fb3507d357969c17669bb045fc:old-Seeder.exe trials/*.exe
+        # Round 3 scans only the new AutoHotkey trials, plus a rescan of the C# full build,
+        # which never got a verdict (VirusTotal lost its analysis twice).
+        run: python3 tools/vt_scan.py --rescan a0b5f301e94b4e0eb43ede5b9f5ca7e35bcfb353c5f72de56a1867a4eb1da83e:SynSeeder-cs-full.exe trials/SynSeeder-ahk-*.exe
       - uses: actions/upload-artifact@v4
         if: always()
         with:

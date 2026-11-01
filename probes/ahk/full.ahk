@@ -9,3 +9,4 @@
 ; Trial: every part the real app needs, including the self-update.
 #Include common.ahk
 #Include update-self.ahk
+#Include images.ahk

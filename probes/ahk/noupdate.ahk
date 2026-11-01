@@ -9,3 +9,4 @@
 ; Trial: the same, but the update check only opens the release page.
 #Include common.ahk
 #Include update-page.ahk
+#Include images.ahk

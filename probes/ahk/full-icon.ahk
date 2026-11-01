@@ -3,3 +3,4 @@
 ; Full trial with SynSeeder's icon only.
 #Include common.ahk
 #Include update-self.ahk
+#Include images.ahk

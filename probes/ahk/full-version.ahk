@@ -8,3 +8,4 @@
 ; Full trial with SynSeeder's version details only.
 #Include common.ahk
 #Include update-self.ahk
+#Include images.ahk
