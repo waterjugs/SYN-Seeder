@@ -1,6 +1,6 @@
 # SynSeeder Terms of Service
 
-Last updated: 30 October 2026
+Last updated: 1 November 2026
 
 SynSeeder is a free, unofficial tool that plays Hell Let Loose: Vietnam for you so a community server fills up. By running it, you agree to these terms. The short version:
 
@@ -28,7 +28,7 @@ During a run, SynSeeder takes over the game the way a player would, and you agre
 - moves the mouse, clicks and presses keys in the game, including a small movement about once a minute so the game doesn't kick it for being idle, and rejoins, redeploys or restarts the game when it needs to;
 - clicks "Yes" on admin messages so the run can carry on, so you may not see a message an admin sends you;
 - once your mouse and keyboard have been left alone for 15 seconds, brings the game to the front, which can mean an Alt key tap, or a mouse signal that doesn't move the pointer, in whatever window you're using (watching a video or using a gamepad counts as leaving them alone);
-- closes the game when the server reaches 80 players, after 4 hours, when it can't get in, or when you press **Stop seeding** or Ctrl+Alt+End, even if you've started playing in it yourself;
+- closes the game up to 10 minutes after the server reaches 80 players (each copy waits a random time, so seeders don't all leave at once), after 4 hours, when it can't get in, or when you press **Stop seeding** or Ctrl+Alt+End, even if you've started playing in it yourself;
 - copies itself to `%LOCALAPPDATA%\SynSeeder` when you press **Seed now**, or **Save** with **Seed automatically** ticked. **Seed now** saves your settings too, so with that box ticked either button adds a Windows scheduled task that starts a run every day at your chosen time, and with it unticked either button removes the task. If the PC was off or asleep at that time, the run starts when the PC is next available, which can be hours late. It runs on battery too, and keeps going if a laptop is unplugged.
 
 It's designed to send keys and clicks only while the game is the active window, but we can't promise that input never lands somewhere else. Save your work before a run is due. You're responsible for your PC, the power it uses and anything else running on it.

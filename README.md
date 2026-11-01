@@ -5,7 +5,8 @@ At a scheduled time it checks the server's population through CRCON. If
 the server has fewer than 80 players, it launches the game, joins through
 the in-game server browser, picks the team with fewer players, creates
 its own infantry squad (it never joins someone else's) and deploys. It
-stays in until the server reaches 80, then closes the game.
+stays in until the server reaches 80, waits a random 0 to 10 minutes so
+that seeders don't all leave at once, then closes the game.
 
 Tested end to end on a live PC with game build v1.7 (October and November
 2026) at 1920x1080, 2560x1440 and 3840x2160 (4K), and on ultrawide screens
@@ -54,6 +55,12 @@ window.
   the map changes (if the server still isn't seeded), restarts the game
   after a crash (up to 3 times), and strafes now and then to dodge the
   idle kick.
+- Leaves in turn: once the server reaches 80, each copy waits its own
+  random time (0 to 10 minutes) before closing the game, so the count
+  doesn't fall back under 80 when every seeder leaves together. If the
+  count drops under 80 during that wait, it stays and carries on seeding.
+  To change the longest wait, set `"leave_delay_minutes"` in
+  `config.json` (0 leaves straight away).
 - Gives up after 4 hours whatever happens.
 - Keeps itself up to date: before each run it asks GitHub for the latest
   release and, if that's newer, downloads it and lets the new version take

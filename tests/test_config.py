@@ -18,3 +18,9 @@ def test_reads_file_saved_with_bom_and_ignores_unknown_keys(tmp_path):
 
 def test_missing_file_gives_defaults(tmp_path):
     assert Config.load(tmp_path / "nope.json") == Config()
+
+
+def test_older_settings_files_get_the_leave_delay(tmp_path):
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps({"start_time": "08:00", "seeded_threshold": 80}), encoding="utf-8")
+    assert Config.load(path).leave_delay_minutes == 10

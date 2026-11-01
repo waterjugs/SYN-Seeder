@@ -1,9 +1,16 @@
-"""The seeding session: launch, join, stay in, leave once the server is full."""
+"""The seeding session: launch, join, stay in, leave once the server is full.
+
+Leaving is staggered: once the server reaches the seeded count, each copy
+waits its own random time (up to ``leave_delay_minutes``) before closing the
+game, so seeders don't all drop off within the same half minute and pull
+the server back under the count.
+"""
 
 from __future__ import annotations
 
 import enum
 import logging
+import random
 
 from . import flow
 from .flow import Clock
@@ -31,7 +38,17 @@ def _status(fetch, url: str, clock: Clock, tries: int = 3):
     return None
 
 
-def seed(config, game, screen, fetch, clock: Clock | None = None) -> Outcome:
+def _leave_fraction() -> float:
+    return random.random()
+
+
+def _minutes(seconds: float) -> str:
+    seconds = round(seconds)
+    return f"{seconds // 60} min {seconds % 60} s"
+
+
+def seed(config, game, screen, fetch, clock: Clock | None = None, rng=None) -> Outcome:
+    """``rng`` gives a number from 0 to 1 that picks this run's wait before leaving."""
     clock = clock or Clock()
     status = _status(fetch, config.crcon_url, clock)
     if status is None:
@@ -65,6 +82,8 @@ def seed(config, game, screen, fetch, clock: Clock | None = None) -> Outcome:
     nav = flow.Navigator(screen, config, clock, needy_side, focus=game.focus, alive=game.running, pick=pick,
                          waiting=game.waiting_for_user)
     deadline = clock.monotonic() + config.max_minutes * 60
+    stay_after_seeded = max(config.leave_delay_minutes, 0) * 60 * (rng or _leave_fraction)()
+    seeded_since = None  # when the count last reached the seeded count
     attempts = 0
     in_server = False
     last_nudge = clock.monotonic()
@@ -91,11 +110,15 @@ def seed(config, game, screen, fetch, clock: Clock | None = None) -> Outcome:
                     continue
                 last_nudge = clock.monotonic()
             if remaining <= 0:
-                outcome = Outcome.TIMED_OUT
+                outcome = Outcome.SEEDED if seeded_since is not None else Outcome.TIMED_OUT
                 return outcome
 
             clock.sleep(config.poll_seconds)
             if not game.running():
+                if seeded_since is not None:
+                    log.warning("The game closed while waiting to leave; the server is seeded")
+                    outcome = Outcome.SEEDED
+                    return outcome
                 log.warning("The game closed or crashed; restarting")
                 in_server = False
                 continue
@@ -104,14 +127,25 @@ def seed(config, game, screen, fetch, clock: Clock | None = None) -> Outcome:
             count = latest["status"].player_count
             log.info("Players: %s/%s", count, config.seeded_threshold)
             if count >= config.seeded_threshold:
-                outcome = Outcome.SEEDED
-                return outcome
+                if seeded_since is None:
+                    seeded_since = clock.monotonic()
+                    if stay_after_seeded >= config.poll_seconds:
+                        log.info("Seeded. Leaving in about %s, so seeders don't all leave at once",
+                                 _minutes(stay_after_seeded))
+                if clock.monotonic() - seeded_since >= stay_after_seeded:
+                    outcome = Outcome.SEEDED
+                    return outcome
+            elif seeded_since is not None:
+                log.info("Back under %s players; staying", config.seeded_threshold)
+                seeded_since = None
 
             if not game.focus():
                 continue  # someone else has the screen; send nothing
             name = flow.current_screen(screen)
             if name in flow.OVERLAYS:
                 nav.handle(name)
+            elif name is not None and seeded_since is not None:
+                pass  # seeded and about to leave: no new squad, just stay connected
             elif name is not None:
                 # Kicked to the menu, new map, or died: walk back in.
                 log.info("Not in game any more; getting back in")

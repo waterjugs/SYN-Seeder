@@ -24,6 +24,9 @@ class Config:
     server_search: str = "syndicate"  # lowercase: typed key by key
     crcon_url: str = "https://syn-stats-nam.radicalgamingstats.com/api/get_public_info"
     seeded_threshold: int = 80
+    # Once seeded, wait a random 0 to this many minutes before leaving, so
+    # seeders don't all leave at once (0 leaves straight away)
+    leave_delay_minutes: int = 10
 
     # How the game is started: "steam" or "epic"
     launcher: str = "steam"

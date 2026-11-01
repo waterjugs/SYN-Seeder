@@ -1,8 +1,16 @@
+import pytest
+
 from seeder import flow, runner
 from seeder.config import Config
 from seeder.crcon import ServerStatus
 
 from .fakes import HAPPY_PATH, FakeClock, FakeGame, FakeScreen
+
+
+@pytest.fixture(autouse=True)
+def half_way_wait(monkeypatch):
+    """Runs wait half of leave_delay_minutes once seeded, unless a test passes its own rng."""
+    monkeypatch.setattr(runner, "_leave_fraction", lambda: 0.5)
 
 UNITS = {"switch_team", "faction_nva", "squad_join", "infantry_create"}
 
@@ -577,3 +585,156 @@ def test_debug_screenshots_are_capped_and_a_stuck_file_does_not_block_new_ones(t
     files = sorted(p.name for p in debug.glob("*.png"))
     assert locked.name in files and len(files) == flow.KEEP_SCREENSHOTS + 1
     assert any(p.read_bytes() == b"new" for p in debug.glob("*.png"))
+
+
+# Staggered leaving: once seeded, each copy waits its own random time.
+
+def watch(game, clock, fetch):
+    """Wraps ``fetch`` and ``game.close`` to note when counts came in and when the game closed."""
+    readings, closes = [], []
+    close = game.close
+
+    def timed_close(linger=0):
+        closes.append(clock.now)
+        close(linger)
+
+    def timed_fetch(url):
+        status = fetch(url)
+        readings.append((clock.now, status.player_count if status else None))
+        return status
+
+    game.close = timed_close
+    return timed_fetch, readings, closes
+
+
+def last_reached(readings, threshold=80):
+    """When the count last went from under ``threshold`` to at or over it."""
+    at = None
+    for (_, before), (now, count) in zip(readings, readings[1:]):
+        if count >= threshold > before:
+            at = now
+    return at
+
+
+def test_waits_its_random_time_once_seeded_then_leaves():
+    config, game, screen, clock = make()
+    fetch, readings, closes = watch(game, clock, statuses(10, 10, 40, 80))
+    assert runner.seed(config, game, screen, fetch, clock, rng=lambda: 0.25) is runner.Outcome.SEEDED
+    wait = 0.25 * config.leave_delay_minutes * 60
+    assert wait <= closes[0] - last_reached(readings) < wait + config.poll_seconds
+    assert closes == [closes[0]] and not game.is_running
+    assert screen.clicks.count("create_unit_button") == 1
+
+
+def test_copies_leave_at_different_times():
+    left = []
+    for fraction in (0.1, 0.9):
+        config, game, screen, clock = make()
+        fetch, readings, closes = watch(game, clock, statuses(10, 80))
+        runner.seed(config, game, screen, fetch, clock, rng=lambda: fraction)
+        left.append(closes[0] - last_reached(readings))
+    assert left[1] - left[0] >= 0.8 * Config().leave_delay_minutes * 60 - Config().poll_seconds
+
+
+def test_default_wait_is_up_to_ten_minutes():
+    assert Config().leave_delay_minutes == 10
+    config, game, screen, clock = make()
+    fetch, readings, closes = watch(game, clock, statuses(10, 80))
+    runner.seed(config, game, screen, fetch, clock, rng=lambda: 0.999)
+    assert 9 * 60 < closes[0] - last_reached(readings) < 10 * 60 + config.poll_seconds
+
+
+def test_no_wait_when_the_delay_is_zero():
+    config, game, screen, clock = make()
+    config.leave_delay_minutes = 0
+    fetch, readings, closes = watch(game, clock, statuses(10, 10, 80))
+    assert runner.seed(config, game, screen, fetch, clock, rng=lambda: 0.9) is runner.Outcome.SEEDED
+    assert closes[0] == last_reached(readings)
+
+
+def test_the_wait_starts_again_if_the_count_drops_back_under():
+    config, game, screen, clock = make()
+    fetch, readings, closes = watch(game, clock, statuses(10, 80, 80, 79, 80))
+    assert runner.seed(config, game, screen, fetch, clock, rng=lambda: 0.5) is runner.Outcome.SEEDED
+    first_80 = next(t for t, count in readings if count >= 80)
+    wait = 0.5 * config.leave_delay_minutes * 60
+    assert closes[0] - last_reached(readings) >= wait
+    assert last_reached(readings) > first_80
+
+
+def test_no_new_squad_while_waiting_to_leave():
+    # The map changes after the server is seeded: everyone is sent back to
+    # Units, but the seeder only waits out its time there and then leaves.
+    config, game, screen, clock = make()
+    calls = {"n": 0}
+
+    def fetch(_url):
+        calls["n"] += 1
+        if calls["n"] == 5:
+            screen.visible = {"switch_team", "squad_join", "infantry_create"}
+        return ServerStatus("S", 80 if calls["n"] >= 3 else 20, 40, 40, 0)
+
+    assert runner.seed(config, game, screen, fetch, clock, rng=lambda: 0.5) is runner.Outcome.SEEDED
+    assert screen.clicks.count("infantry_create") == 1 and "squad_join" not in screen.clicks
+    assert game.launches == 1 and not game.is_running
+
+
+def test_back_under_after_a_map_change_creates_a_new_squad():
+    # Seeded, then players leave at the map change: it leads a new squad again.
+    config, game, screen, clock = make()
+    calls = {"n": 0}
+
+    def fetch(_url):
+        calls["n"] += 1
+        if calls["n"] == 4:
+            screen.visible = {"switch_team", "squad_join", "infantry_create"}
+        count = 80 if calls["n"] == 3 or calls["n"] >= 8 else 70
+        return ServerStatus("S", count, count // 2, count - count // 2, 0)
+
+    assert runner.seed(config, game, screen, fetch, clock, rng=lambda: 0.5) is runner.Outcome.SEEDED
+    assert screen.clicks.count("create_unit_button") == 2 and "squad_join" not in screen.clicks
+
+
+def test_game_closing_while_waiting_counts_as_seeded():
+    config, game, screen, clock = make()
+    calls = {"n": 0}
+
+    def fetch(_url):
+        calls["n"] += 1
+        if calls["n"] == 4:  # crash, or the player closed it
+            game.is_running = False
+            screen.visible = set()
+        return ServerStatus("S", 80 if calls["n"] >= 3 else 20, 40, 40, 0)
+
+    assert runner.seed(config, game, screen, fetch, clock, rng=lambda: 0.5) is runner.Outcome.SEEDED
+    assert game.launches == 1
+
+
+def test_time_limit_while_waiting_counts_as_seeded():
+    config, game, screen, clock = make()
+    config.leave_delay_minutes = 10 * config.max_minutes
+    assert runner.seed(config, game, screen, statuses(10, 80), clock, rng=lambda: 1.0) is runner.Outcome.SEEDED
+    assert not game.is_running and clock.now <= config.max_minutes * 60 + config.poll_seconds
+
+
+def test_stop_hotkey_still_works_while_waiting():
+    config, game, screen, _ = make()
+    readings = []
+
+    class StopClock(FakeClock):
+        def sleep(self, seconds):
+            super().sleep(seconds)
+            if readings and seconds == config.poll_seconds:
+                raise flow.Stopped()
+
+    counts = statuses(10, 10, 80)
+
+    def fetch(url):
+        status = counts(url)
+        if status.player_count >= 80:
+            readings.append(status)
+        return status
+
+    with pytest.raises(flow.Stopped):
+        runner.seed(config, game, screen, fetch, StopClock(), rng=lambda: 0.5)
+    assert len(readings) == 1 and not game.is_running  # stopped mid-wait, game closed
