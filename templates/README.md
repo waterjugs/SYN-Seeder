@@ -6,10 +6,15 @@ v1.7 (October 2026) by `tools/crop_templates.py`, which holds the exact
 boxes. Frames and templates are both shrunk to 720px high and lightly
 blurred before matching, so the same set works from 720p to 1440p and up
 (tests/test_matching.py checks 720p, 1080p and 1440p against real
-screenshots, and the screens in tests/screens/1080p were captured natively
-at 1920x1080). The game draws small text a little differently at each
-resolution, so the two text templates also have a 1080p crop,
-`server_row.1080p.png` and `create_unit.1080p.png`.
+screenshots; the screens in tests/screens/1080p were captured natively at
+1920x1080, and those in tests/screens/<width>x<height> natively at 2560x1080,
+3440x1440, 3840x2160 and 5120x2160). The game draws small text a little
+differently at each resolution, so the two text templates also have a 1080p
+crop, `server_row.1080p.png` and `create_unit.1080p.png`, and two templates
+that scored too close to their cut-off at 2160p have a crop cut from a 4K or
+5120x2160 capture: `server_row.2160p.png` and `switch_team.2160p.png`. On
+screens wider than 16:9 the game keeps its menus in a 16:9 area in the
+middle, so the regions the seeder searches are placed within that area.
 
 | File | Screen it identifies / what gets clicked |
 | --- | --- |

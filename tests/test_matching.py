@@ -206,10 +206,11 @@ def load_wide(name: str, res: str) -> np.ndarray:
     return widen(gray, w)
 
 
-def menu_x(x: float, res: str) -> float:
-    """Where a 16:9 x fraction lands on a wide screen, in pixels."""
-    w, h = WIDE[res]
-    return (w - h * 16 / 9) / 2 + x * h * 16 / 9
+def menu_x(x: float, size: tuple[int, int]) -> float:
+    """Where an x fraction of the 16:9 menu area lands on a ``size`` screen, in pixels."""
+    w, h = size
+    menus = min(w, h * 16 / 9)
+    return (w - menus) / 2 + x * menus
 
 
 def test_menu_region_is_the_whole_screen_at_16_9():
@@ -240,7 +241,7 @@ def test_units_screen_details_on_wide_screens(shot, res):
     if shot == "units":
         assert screen.find("faction_nva", flow.FACTION_BADGE)  # the badge sits left of the old 0-12% strip
     plus = screen.find("infantry_create", flow.INFANTRY_CREATE)
-    assert plus and menu_x(0.29, res) < plus[0] < menu_x(0.53, res)  # Infantry's +, not Armor's
+    assert plus and menu_x(0.29, WIDE[res]) < plus[0] < menu_x(0.53, WIDE[res])  # Infantry's +, not Armor's
 
 
 @pytest.mark.parametrize("res", WIDE)
@@ -261,7 +262,7 @@ def test_create_unit_button_on_wide_screens(shot, res):
     screen.refresh()
     button = screen.find("create_unit_button", flow.CREATE_UNIT_BUTTON)
     h = WIDE[res][1]
-    assert button and abs(button[0] - menu_x(0.765, res)) < 0.02 * h * 16 / 9
+    assert button and abs(button[0] - menu_x(0.765, WIDE[res])) < 0.02 * h * 16 / 9
     assert abs(button[1] / h - 0.741) < 0.02
 
 
@@ -273,7 +274,87 @@ def test_join_button_on_server_row_on_wide_screens(res):
     joins = screen.find_all("browser_join")
     assert row and joins
     join = min(joins, key=lambda pos: abs(pos[1] - row[1]))
-    assert abs(join[0] - menu_x(1726 / 2560, res)) < 15 * WIDE[res][1] / 1080
+    assert abs(join[0] - menu_x(1726 / 2560, WIDE[res])) < 15 * WIDE[res][1] / 1080
+
+
+# Captured natively in live runs on 2026-11-01 (game build v1.7), with the account
+# name and admin messages blacked out. At 2160p the game draws the server name
+# and SWITCH TEAM differently enough that the 1440p crops scored 0.78-0.83 and
+# 0.90 there, so those two have crops cut at 2160p too.
+EXPECTED_NATIVE = {
+    "2560x1080/select_force": "select_force",
+    "2560x1080/units": "switch_team",
+    "2560x1080/create_unit": "create_unit",
+    "3440x1440/search": "server_row",
+    "3840x2160/select_force": "select_force",
+    "3840x2160/units": "switch_team",
+    "3840x2160/create_unit": "create_unit",
+    "3840x2160/roles": "roles_confirm",
+    "3840x2160/deploy_counting": None,
+    "5120x2160/search": "server_row",  # stuck here live, refreshing, before the 2160p crop
+}
+
+
+def load_native(shot: str) -> np.ndarray:
+    return cv2.imread(str(SCREENS / f"{shot}.jpg"), cv2.IMREAD_GRAYSCALE)
+
+
+def native_screen(shot: str) -> tuple[ImageScreen, tuple[int, int]]:
+    gray = load_native(shot)
+    screen = ImageScreen(gray)
+    screen.refresh()
+    return screen, (gray.shape[1], gray.shape[0])
+
+
+@pytest.mark.parametrize("shot", EXPECTED_NATIVE)
+def test_recognises_native_screen(shot):
+    assert flow.current_screen(ImageScreen(load_native(shot))) == EXPECTED_NATIVE[shot]
+
+
+@pytest.mark.parametrize("shot", ["3440x1440/search", "5120x2160/search"])
+def test_native_join_on_server_row(shot):
+    screen, size = native_screen(shot)
+    row = screen.find("server_row")
+    joins = screen.find_all("browser_join")
+    assert row and joins
+    join = min(joins, key=lambda pos: abs(pos[1] - row[1]))
+    assert abs(join[0] - menu_x(1726 / 2560, size)) < 0.01 * size[0]
+    assert abs(join[1] - row[1]) < 0.01 * size[1]
+
+
+@pytest.mark.parametrize("size", ["2560x1080", "3840x2160"])
+def test_native_force_cards(size):
+    screen, (w, h) = native_screen(f"{size}/select_force")
+    us = screen.find(*flow.FORCE_CARDS["allies"])
+    nva = screen.find(*flow.FORCE_CARDS["axis"])
+    assert us and us[0] < w / 2
+    assert nva and nva[0] > w / 2
+
+
+@pytest.mark.parametrize("size", ["2560x1080", "3840x2160"])
+def test_native_units(size):
+    screen, dims = native_screen(f"{size}/units")
+    plus = screen.find("infantry_create", flow.INFANTRY_CREATE)
+    # Infantry's + sits at about 0.411 of the menu area; Commander's (0.143) and Armor's (0.64) are outside.
+    assert plus and abs(plus[0] - menu_x(0.411, dims)) < 0.02 * dims[0]
+    assert screen.find("switch_team")
+    assert not screen.find("faction_nva", flow.FACTION_BADGE)  # these runs picked US
+
+
+@pytest.mark.parametrize("size", ["2560x1080", "3840x2160"])
+def test_native_create_unit_button(size):
+    screen, (w, h) = native_screen(f"{size}/create_unit")
+    button = screen.find("create_unit_button", flow.CREATE_UNIT_BUTTON)
+    assert button and abs(button[0] - menu_x(0.765, (w, h))) < 0.02 * w and abs(button[1] / h - 0.741) < 0.02
+
+
+@pytest.mark.parametrize("name, shot", [("server_row", "5120x2160/search"), ("switch_team", "3840x2160/units")])
+def test_native_2160p_crops_match_on_their_own(name, shot):
+    # At the default threshold, so it fails if the crop goes missing, is cut
+    # from the wrong box or is scaled as if cut at 1440p.
+    crops = [t for t in load_templates(bundled_templates_dir())[name] if t[1] == 2160]
+    assert crops, f"no {name}.2160p.png"
+    assert match_all(prepare_frame(load_native(shot)), Vision({name: crops}).templates[name])
 
 
 def test_user_templates_override_bundled(tmp_path):
