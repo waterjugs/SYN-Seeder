@@ -1,8 +1,6 @@
 # PyInstaller recipe for SynSeeder.exe:  pyinstaller --noconfirm SynSeeder.spec
 # Same as the old one-line command, plus the window's images, the app icon and
 # the name and version Windows shows in Properties and Task Manager.
-# Keep PyInstaller's ready-made bootloader: a bootloader compiled from source
-# was tried (2026-11-01) and drew one more antivirus flag, not fewer.
 
 import re
 import sys
@@ -22,11 +20,9 @@ if sys.platform == "win32":  # the version resource only exists on Windows
         ffi=FixedFileInfo(filevers=numbers, prodvers=numbers),
         kids=[
             StringFileInfo([StringTable("040904B0", [
-                StringStruct("CompanyName", "SynSeeder"),
                 StringStruct("FileDescription", "SYN Vietnam Seeder"),
                 StringStruct("FileVersion", text),
                 StringStruct("InternalName", "SynSeeder"),
-                StringStruct("LegalCopyright", "Copyright (c) 2026 the SynSeeder authors"),
                 StringStruct("OriginalFilename", "SynSeeder.exe"),
                 StringStruct("ProductName", "SYN Vietnam Seeder"),
                 StringStruct("ProductVersion", text),
@@ -39,17 +35,6 @@ a = Analysis(
     [str(root / "run_seeder.py")],
     datas=[(str(root / "templates"), "templates"), (str(root / "assets"), "assets")],
 )
-
-# OpenCV's video plug-in (about 28 MB) is never loaded: SynSeeder only reads
-# still images. Leaving it out makes the exe smaller and leaves virus scanners
-# less to pick through.
-def _wanted(entry):
-    return not Path(entry[0]).name.lower().startswith("opencv_videoio_ffmpeg")
-
-
-a.binaries = [entry for entry in a.binaries if _wanted(entry)]
-a.datas = [entry for entry in a.datas if _wanted(entry)]
-
 pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
