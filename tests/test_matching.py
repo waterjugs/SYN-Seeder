@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from seeder import flow
-from seeder.screen import Vision, bundled_templates_dir, load_templates, match_all, prepare_frame
+from seeder.screen import Vision, bundled_templates_dir, load_templates, match_all, menu_region, prepare_frame
 
 SCREENS = Path(__file__).parent / "screens"
 
@@ -184,6 +184,96 @@ def test_clicks_map_back_to_screen_pixels():
     screen.refresh()
     x, y = screen.find("menu_enlist")
     assert abs(x - 180) < 12 and abs(y - 905) < 12  # measured on the original
+
+
+# Wide screens: the game keeps its menus in a 16:9 area in the middle, at the
+# size it uses for a 16:9 screen of the same height (seen live at 2560x1080 on
+# 2026-11-01), so these pad the 16:9 screenshots out at both sides.
+WIDE = {"2560x1080": (2560, 1080), "3440x1440": (3440, 1440), "5120x2160": (5120, 2160)}
+
+
+def widen(gray: np.ndarray, width: int) -> np.ndarray:
+    side = width - gray.shape[1]
+    return cv2.copyMakeBorder(gray, 0, 0, side // 2, side - side // 2, cv2.BORDER_CONSTANT, value=25)
+
+
+def load_wide(name: str, res: str) -> np.ndarray:
+    w, h = WIDE[res]
+    if h == 1080 and (SCREENS / "1080p" / f"{name}.jpg").exists():
+        gray = load_1080p(name)  # text drawn natively at this height
+    else:
+        gray = load(name, (h * 16 // 9, h))
+    return widen(gray, w)
+
+
+def menu_x(x: float, res: str) -> float:
+    """Where a 16:9 x fraction lands on a wide screen, in pixels."""
+    w, h = WIDE[res]
+    return (w - h * 16 / 9) / 2 + x * h * 16 / 9
+
+
+def test_menu_region_is_the_whole_screen_at_16_9():
+    for w, h in [(1920, 1080), (2560, 1440), (3840, 2160), (1280, 720)]:
+        assert menu_region(flow.FACTION_BADGE, w, h) == pytest.approx(flow.FACTION_BADGE)
+
+
+def test_menu_region_is_centred_on_wide_screens():
+    # 2560x1080: the menus use the middle 1920 pixels, from x=320 to 2240.
+    left, top, right, bottom = menu_region((0.0, 0.75, 0.12, 0.95), 2560, 1080)
+    assert left * 2560 == pytest.approx(320) and right * 2560 == pytest.approx(320 + 0.12 * 1920)
+    assert (top, bottom) == (0.75, 0.95)
+    left, _, right, _ = menu_region((0.0, 0.0, 1.0, 1.0), 3440, 1440)
+    assert left * 3440 == pytest.approx(440) and right * 3440 == pytest.approx(3000)
+
+
+@pytest.mark.parametrize("res", WIDE)
+@pytest.mark.parametrize("shot", EXPECTED)
+def test_recognises_screen_on_wide_screens(shot, res):
+    assert flow.current_screen(ImageScreen(load_wide(shot, res))) == EXPECTED[shot]
+
+
+@pytest.mark.parametrize("res", WIDE)
+@pytest.mark.parametrize("shot", ["units", "rejoin_units"])
+def test_units_screen_details_on_wide_screens(shot, res):
+    screen = ImageScreen(load_wide(shot, res))
+    screen.refresh()
+    if shot == "units":
+        assert screen.find("faction_nva", flow.FACTION_BADGE)  # the badge sits left of the old 0-12% strip
+    plus = screen.find("infantry_create", flow.INFANTRY_CREATE)
+    assert plus and menu_x(0.29, res) < plus[0] < menu_x(0.53, res)  # Infantry's +, not Armor's
+
+
+@pytest.mark.parametrize("res", WIDE)
+def test_select_force_cards_on_wide_screens(res):
+    screen = ImageScreen(load_wide("select_force", res))
+    screen.refresh()
+    us = screen.find(*flow.FORCE_CARDS["allies"])
+    nva = screen.find(*flow.FORCE_CARDS["axis"])
+    middle = WIDE[res][0] / 2
+    assert us and us[0] < middle
+    assert nva and nva[0] > middle
+
+
+@pytest.mark.parametrize("res", WIDE)
+@pytest.mark.parametrize("shot", ["create_unit", "rejoin_create_unit"])
+def test_create_unit_button_on_wide_screens(shot, res):
+    screen = ImageScreen(load_wide(shot, res))
+    screen.refresh()
+    button = screen.find("create_unit_button", flow.CREATE_UNIT_BUTTON)
+    h = WIDE[res][1]
+    assert button and abs(button[0] - menu_x(0.765, res)) < 0.02 * h * 16 / 9
+    assert abs(button[1] / h - 0.741) < 0.02
+
+
+@pytest.mark.parametrize("res", WIDE)
+def test_join_button_on_server_row_on_wide_screens(res):
+    screen = ImageScreen(load_wide("search", res))
+    screen.refresh()
+    row = screen.find("server_row")
+    joins = screen.find_all("browser_join")
+    assert row and joins
+    join = min(joins, key=lambda pos: abs(pos[1] - row[1]))
+    assert abs(join[0] - menu_x(1726 / 2560, res)) < 15 * WIDE[res][1] / 1080
 
 
 def test_user_templates_override_bundled(tmp_path):

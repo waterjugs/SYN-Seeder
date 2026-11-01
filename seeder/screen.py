@@ -10,7 +10,11 @@ matching counts as a hit. A variant named after a screen height, such as
 draws small text a little differently at each resolution, so text
 templates carry a crop from each common one.
 
-Regions are (left, top, right, bottom) as fractions of the screen.
+Regions are (left, top, right, bottom) as fractions of the game's menu
+area. That's the whole screen at 16:9. On wider screens (21:9 and 32:9) the
+game keeps its menus in a 16:9 area in the middle at the same size, and
+only the backgrounds and a few popups reach the sides (seen at 2560x1080 on
+2026-11-01), so regions are mapped into that middle area.
 """
 
 from __future__ import annotations
@@ -46,6 +50,7 @@ THRESHOLDS = {
     "create_unit": 0.80,
 }
 SCALES = (0.95, 1.0, 1.05)
+MENU_ASPECT = 16 / 9  # the game's menu area; wider screens get it centred
 
 Region = tuple[float, float, float, float]
 Template = tuple[np.ndarray, int]  # image, and the screen height it was cut at
@@ -98,10 +103,21 @@ def prepare_template(image: np.ndarray, scale: float) -> np.ndarray:
     return cv2.GaussianBlur(cv2.resize(image, size, interpolation=interpolation), BLUR, 0)
 
 
+def menu_region(region: Region, width: int, height: int) -> Region:
+    """A region of the 16:9 menu area as fractions of a ``width`` x ``height`` screen."""
+    share = MENU_ASPECT * height / width  # how much of the width the menus use
+    if share >= 1:
+        return region
+    left, top, right, bottom = region
+    side = (1 - share) / 2
+    return (side + left * share, top, side + right * share, bottom)
+
+
 def _crop(frame: np.ndarray, region: Region | None) -> tuple[np.ndarray, int, int]:
     if region is None:
         return frame, 0, 0
     h, w = frame.shape[:2]
+    region = menu_region(region, w, h)
     x0, y0 = int(region[0] * w), int(region[1] * h)
     x1, y1 = int(region[2] * w), int(region[3] * h)
     return frame[y0:y1, x0:x1], x0, y0

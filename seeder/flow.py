@@ -41,7 +41,7 @@ SCREENS = [
     "menu_enlist",
 ]
 
-# Parts of the Units screen (fractions of the game area, 16:9 layout).
+# Parts of the Units screen, as fractions of the 16:9 menu area (see screen.py).
 INFANTRY_CREATE = (0.29, 0.10, 0.53, 0.22)
 FACTION_BADGE = (0.0, 0.75, 0.12, 0.95)
 # The two cards on Select Force.
