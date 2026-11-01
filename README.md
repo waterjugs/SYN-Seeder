@@ -1,86 +1,103 @@
 # SynSeeder
 
-Seeds the **Syndicate | Competitive Server** on Hell Let Loose: Vietnam.
-At a scheduled time it checks the server's population through CRCON. If
-the server has fewer than 80 players, it launches the game, joins through
-the in-game server browser, picks the team with fewer players, creates
-its own infantry squad (it never joins someone else's) and deploys. It
-stays in until the server reaches 80, waits a random 0 to 10 minutes so
-that seeders don't all leave at once, then closes the game.
+SynSeeder helps fill up the **Syndicate | Competitive Server** in
+Hell Let Loose: Vietnam.
 
-Tested end to end on a live PC with game build v1.7 (October and November
-2026) at 1920x1080, 2560x1440 and 3840x2160 (4K), and on ultrawide screens
-at 2560x1080, 3440x1440 and 5120x2160.
+Nobody likes joining an empty server. So when the server is quiet,
+SynSeeder plays for you. The server looks busy, and real players join.
+This is called **seeding**.
 
-## Using it
+## How it works
 
-1. Start the game yourself once and finish the **Getting Started** and
-   **Squad Leader** tutorials. The game won't let you create a squad until
-   both are done, and the seeder always creates its own. Tutorial progress
-   doesn't carry over between Steam and Epic, so do them on the store you'll
-   seed with.
-2. Download `SynSeeder.exe` from the
-   [latest release](https://github.com/waterjugs/SYN-Seeder/releases/latest)
-   and double-click it. Windows may say "Windows protected your PC"
-   because the exe isn't code-signed: click **More info**, then
-   **Run anyway**.
-3. Pick the time to seed each day and Steam or Epic, tick
-   **Seed automatically**, and press **Save**. That's it.
+1. At the time you pick, SynSeeder wakes up.
+2. It checks how many people are on the server.
+3. If 80 or more are playing, the server is full enough. It goes back
+   to sleep.
+4. If fewer than 80 are playing, it opens the game for you.
+5. It finds the Syndicate server and joins it.
+6. It picks the team with fewer players.
+7. It makes its own squad. It never joins someone else's squad.
+8. It jumps in and stays. Now and then it takes a tiny step, so the game
+   doesn't kick it for standing still.
+9. When the server has 80 players, it waits a little (0 to 10 minutes),
+   then closes the game.
 
-It copies itself to `%LOCALAPPDATA%\SynSeeder` and adds a Windows
-scheduled task called *SynSeeder*. The PC needs to be on, signed in and
-unlocked at that time (it runs late if the PC was asleep). Set the game to
-Borderless / Windowed Fullscreen (or Windowed) so the seeder can see it. **Seed now** starts a run
-straight away and **Stop seeding** ends one and closes the game.
+**Why wait?** If every SynSeeder left at the same moment, the server
+would drop under 80 again. Each one waits a different amount of time, so
+they leave one by one. If the server drops under 80 while it waits, it
+stays and keeps seeding.
 
-## Terms and privacy
+## Before you start (only once)
 
-Using SynSeeder means agreeing to its [Terms of Service](TERMS.md). In
-short, it comes as is, and Steam's rules ban automated play like this, so
+- Open the game yourself and finish two tutorials: **Getting Started**
+  and **Squad Leader**. The game won't let you make a squad until you
+  do. If you have the game on Steam and Epic, do them on the one you'll
+  seed with.
+- In the game's settings, set the display mode to **Borderless** (also
+  called Windowed Fullscreen) or **Windowed**. Then SynSeeder can see
+  the game.
+
+## Set it up
+
+1. Download `SynSeeder.exe` from the
+   [latest release](https://github.com/waterjugs/SYN-Seeder/releases/latest).
+2. Double-click it. If Windows says "Windows protected your PC", click
+   **More info**, then **Run anyway**.
+3. Pick the time to seed each day.
+4. Pick **Steam** or **Epic**.
+5. Tick **Seed automatically** and press **Save**.
+
+That's it! Now it seeds by itself every day at that time.
+
+Want to try it now? Press **Seed now**.
+
+## Good to know
+
+- At seeding time, your PC must be on, signed in and unlocked. If it was
+  asleep, SynSeeder runs when the PC wakes up.
+- To stop a run, press **Ctrl+Alt+End**, or **Stop seeding** in the
+  window. The game closes.
+- If you're already playing the game, SynSeeder leaves you alone.
+- It only presses keys when the game is in front. If you click on
+  something else, it waits until you stop using the mouse and keyboard
+  for 15 seconds, then brings the game back.
+- It always stops after 4 hours.
+- It updates itself. Before each run it checks for a newer version.
+- It keeps a copy of itself in `%LOCALAPPDATA%\SynSeeder` and adds a
+  Windows task called *SynSeeder* that starts it each day.
+- To stop seeding every day, untick **Seed automatically** and press
+  **Save**.
+
+## If it gets stuck
+
+If SynSeeder gets stuck (for example after a game update), it saves a
+picture of the screen. The pictures are in `%APPDATA%\SynSeeder\debug`
+and its notes are in `%APPDATA%\SynSeeder\seeder.log`. Send both to us
+privately so we can fix it. The
+[Privacy Policy](PRIVACY.md#sending-your-log-or-screenshots-to-someone)
+says how.
+
+## The rules
+
+Using SynSeeder means you agree to the [Terms of Service](TERMS.md). The
+short version: it comes as it is, and Steam's rules don't allow bots, so
 any risk to your game account is yours. The [Privacy Policy](PRIVACY.md)
-lists what it keeps on your PC and the only places it connects to: the
-server's stats page and GitHub. Both are linked at the bottom of the
-window.
+says what SynSeeder keeps on your PC and what it talks to: the server's
+player count page and GitHub, nothing else.
 
-## What it does
+## Tested on
 
-- Skips the whole run if the server is already seeded, unreachable, or if
-  the game is already open (it never takes over a game you're playing).
-- Finds menu buttons by image matching (see `templates/`), so it doesn't
-  depend on fixed screen coordinates or a particular resolution.
-- On a fresh join it picks the team with fewer players. When it rejoins
-  (the game skips team choice then), it keeps its team unless that team is
-  2+ players ahead, in which case it switches once.
-- Rejoins after a kick, redeploys after dying, creates a new squad when
-  the map changes (if the server still isn't seeded), restarts the game
-  after a crash (up to 3 times), and strafes now and then to dodge the
-  idle kick.
-- Leaves in turn: once the server reaches 80, each copy waits its own
-  random time (0 to 10 minutes) before closing the game, so the count
-  doesn't fall back under 80 when every seeder leaves together. If the
-  count drops under 80 during that wait, it stays and carries on seeding.
-  To change the longest wait, set `"leave_delay_minutes"` in
-  `config.json` (0 leaves straight away).
-- Gives up after 4 hours whatever happens.
-- Keeps itself up to date: before each run it asks GitHub for the latest
-  release and, if that's newer, downloads it and lets the new version take
-  over the run. Only exes from a release do this, never one you built
-  yourself. To turn it off, set `"auto_update": false` in `config.json`.
-- Press **Ctrl+Alt+End** to stop a run (or use **Stop seeding** in the
-  window). It only sends keys while the game is the active window, so
-  alt-tabbing away pauses it rather than typing into your other apps.
-  Once the mouse and keyboard have been left alone for 15 seconds it
-  brings the game back to the front and carries on; the game's taskbar
-  button flashes while it waits for you.
-- Works with any keyboard layout (keys are looked up for your layout).
+Game version v1.7 (October and November 2026), on Steam and Epic, at
+these screen sizes: 1920x1080, 2560x1440, 3840x2160 (4K), and the wide
+screens 2560x1080, 3440x1440 and 5120x2160.
 
-Settings live in `%APPDATA%\SynSeeder\config.json` and the log in
-`%APPDATA%\SynSeeder\seeder.log`. If it ever gets stuck on a screen it
-doesn't know (after a game patch, say), it saves a screenshot to
-`%APPDATA%\SynSeeder\debug`. To get it fixed, send that and the log privately; the
-[Privacy Policy](PRIVACY.md#sending-your-log-or-screenshots-to-someone) says how.
+## For developers
 
-## Development
+SynSeeder finds buttons by matching pictures of them (in `templates/`),
+not by clicking fixed spots, so it works at any screen size. Settings are
+in `%APPDATA%\SynSeeder\config.json`. Two you might change by hand:
+`"leave_delay_minutes"` (the longest wait before leaving, default 10;
+0 leaves straight away) and `"auto_update"` (`false` turns updates off).
 
 ```
 pip install -r requirements-dev.txt
@@ -93,7 +110,8 @@ build.bat                    # makes dist\SynSeeder.exe from SynSeeder.spec
 ```
 
 GitHub Actions runs the tests and builds `SynSeeder.exe` on every push.
-Pushing a tag like `v1.0.1` also publishes a release with the exe attached,
-and every installed copy picks it up at its next run. Set `__version__` in
-`seeder/__init__.py` to the same number first: the build fails if the tag
-and the version don't match.
+Pushing a tag like `v1.0.1` also publishes a release with the exe
+attached, and every installed copy picks it up at its next run. Only exes
+from a release update themselves, never one you built yourself. Set
+`__version__` in `seeder/__init__.py` to the same number first: the build
+fails if the tag and the version don't match.
