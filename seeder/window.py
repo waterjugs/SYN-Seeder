@@ -487,14 +487,17 @@ class SetupWindow:
         self.root.after(0, lambda: self._show_server(count))
 
     def _watch_seed(self) -> None:
-        # Off the Tk thread: listing every process's command line takes a moment on Windows.
+        # Off the Tk thread: listing processes takes a moment on Windows.
         if self._seed_check is None or not self._seed_check.is_alive():
             self._seed_check = threading.Thread(target=self._check_seed, args=(self._seed_epoch,), daemon=True)
             self._seed_check.start()
         self.root.after(SEED_CHECK_MS, self._watch_seed)
 
     def _check_seed(self, epoch: int) -> None:
-        running = bool(instance.seeding_processes())
+        # A run holds the seeding lock, which is cheap to look for. A run that's
+        # starting (unpacking, before it takes the lock) or handing over to a
+        # new version doesn't, so while one is expected, look for its process too.
+        running = instance.held_elsewhere() or (self._seeding is True and bool(instance.seeding_processes()))
         self.root.after(0, lambda: self._show_seeding(running, epoch))
 
     def _show_seeding(self, running: bool, epoch: int) -> None:

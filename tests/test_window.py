@@ -258,13 +258,22 @@ def test_stop_message_stays(win, monkeypatch):
     assert win.status.cget("text") == "Stopped seeding and closed the game."
 
 
-def test_check_seed_reports_from_its_thread(win, monkeypatch):
-    shown = []
-    monkeypatch.setattr(window.instance, "seeding_processes", lambda: [object()])
-    monkeypatch.setattr(win.root, "after", lambda ms, then: then())
+@pytest.mark.parametrize("seeding, held, processes, running, scanned", [
+    (None, True, [], True, False),  # a run holds the lock: no process scan needed
+    (None, False, [object()], False, False),  # idle: only the cheap lock check, until a run takes the lock
+    (True, False, [object()], True, True),  # just started by Seed now, still unpacking
+    (True, False, [], False, True),  # the run has ended
+])
+def test_check_seed(win, monkeypatch, seeding, held, processes, running, scanned):
+    shown, scans = [], []
+    win._seeding = seeding
+    monkeypatch.setattr(window.instance, "held_elsewhere", lambda: held)
+    monkeypatch.setattr(window.instance, "seeding_processes", lambda: scans.append(1) or processes)
+    monkeypatch.setattr(win.root, "after", lambda ms, then: then())  # as if back on the Tk thread
     monkeypatch.setattr(win, "_show_seeding", lambda running, epoch: shown.append((running, epoch)))
     LOOK(win, 7)
-    assert shown == [(True, 7)]
+    assert shown == [(running, 7)]
+    assert bool(scans) == scanned
 
 
 def labelled(widget: tk.Misc, text: str) -> tk.Misc:
