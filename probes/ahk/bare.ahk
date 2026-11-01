@@ -6,10 +6,5 @@
 ;@Ahk2Exe-SetCopyright Copyright (c) waterjugs
 ;@Ahk2Exe-SetOrigFilename SynSeeder.exe
 ;@Ahk2Exe-SetMainIcon ..\..\assets\synseeder.ico
-; Trial baseline: only a window, to compare against the others.
-g := Gui(, "SynSeeder")
-g.SetFont("s10", "Segoe UI")
-g.Add("Text", , "SynSeeder")
-g.Add("Button", "w80", "Close").OnEvent("Click", (*) => ExitApp())
-g.OnEvent("Close", (*) => ExitApp())
-g.Show()
+; Trial baseline: only a window, with SynSeeder's icon and version details.
+#Include bare-body.ahk

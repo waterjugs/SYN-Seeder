@@ -1,7 +1,7 @@
 name: trial builds
 
 # Builds the native trial versions of SynSeeder in probes/ (C# and AutoHotkey,
-# three variants each) and scans every exe on VirusTotal, to find a way to
+# in several variants) and scans every exe on VirusTotal, to find a way to
 # ship an exe that no antivirus flags. Runs on pushes to trial/ branches, or
 # from the Actions tab. Results show as notes on the run and in its summary.
 
@@ -51,79 +51,85 @@ jobs:
 
   autohotkey:
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
+    env:
+      # 2.0.18 is the version the old seeder (0/71) was built on; 2.0.31 is the newest 2.0 release.
+      AHK_VERSIONS: "2.0.18 2.0.31"
+      # Each variant with and without SynSeeder's icon and version details (see probes/README.md).
+      AHK_VARIANTS: "bare-plain bare-icon bare-version bare full-plain full-icon full-version full"
     steps:
       - uses: actions/checkout@v4
-      - name: Get AutoHotkey v2 and Ahk2Exe
+      - name: Get AutoHotkey and Ahk2Exe
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           # From AutoHotkey's GitHub releases: autohotkey.com puts a browser check in front of downloads.
-          $tag = gh release list --repo AutoHotkey/AutoHotkey --exclude-pre-releases --limit 40 --json tagName --jq '.[].tagName' |
-            Where-Object { $_ -match '^v2\.0\.\d+$' } | Select-Object -First 1
-          echo "AutoHotkey release $tag"
-          gh release view $tag --repo AutoHotkey/AutoHotkey --json assets --jq '.assets[].name'
-          gh release download $tag --repo AutoHotkey/AutoHotkey --pattern "*.zip" --dir ahk-download
-          $zip = Get-ChildItem ahk-download\*.zip -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($zip) {
-            Expand-Archive $zip.FullName ahk-tools\ahk
-          } else {
-            gh release download $tag --repo AutoHotkey/AutoHotkey --pattern "*setup.exe" --dir ahk-download
-            $setup = Get-ChildItem ahk-download\*setup.exe | Select-Object -First 1
-            $p = Start-Process $setup.FullName -ArgumentList "/silent", "/installto", "$pwd\ahk-tools\ahk" -PassThru
-            $null = $p.Handle
-            if (-not $p.WaitForExit(180000)) { $p.Kill(); echo "::error::The AutoHotkey installer hung"; exit 1 }
+          # Pinned by SHA-256, since whatever we ship is built on one of these.
+          $known = @{
+            "2.0.18" = "70031669FEF8C365A243322C52DF9C3F854271489E67C5A9FC3139F56BC357E9"
+            "2.0.31" = "5073EE85DA091653C7C6CE32CACDA3A0B4BFB51649823C10015BA0BD71ACB73C"
           }
-          # The zip has AutoHotkey64.exe at the top; an install keeps it in a v2 folder, maybe a few seconds later.
-          for ($i = 0; $i -lt 30 -and -not (Get-ChildItem ahk-tools\ahk -Recurse -Filter AutoHotkey64.exe -ErrorAction SilentlyContinue); $i++) { Start-Sleep 2 }
-          Get-ChildItem ahk-tools\ahk -Recurse -Filter *.exe | Select-Object FullName, Length
+          New-Item -ItemType Directory -Force trials | Out-Null
+          foreach ($version in $env:AHK_VERSIONS -split ' ') {
+            gh release download "v$version" --repo AutoHotkey/AutoHotkey --pattern "*.zip" --dir "ahk-download\$version"
+            if ($LASTEXITCODE -ne 0) { echo "::error title=AutoHotkey $version::couldn't download it"; exit 1 }
+            $zip = Get-ChildItem "ahk-download\$version\*.zip" | Select-Object -First 1
+            Expand-Archive $zip.FullName "ahk-tools\$version"
+            $base = Get-Item "ahk-tools\$version\AutoHotkey64.exe"
+            $hash = (Get-FileHash $base.FullName).Hash
+            echo "AutoHotkey64.exe $version from $($zip.Name): $($base.Length) bytes, $hash"
+            if ($hash -ne $known[$version]) { echo "::error title=AutoHotkey $version::unexpected SHA-256 $hash"; exit 1 }
+            # Scan the plain interpreter too, to see whether a flag comes from AutoHotkey itself.
+            Copy-Item $base.FullName "trials\AutoHotkey64-$version.exe"
+          }
           gh release download --repo AutoHotkey/Ahk2Exe --pattern "*.zip" --dir ahk2exe-zip
           Expand-Archive (Get-ChildItem ahk2exe-zip\*.zip | Select-Object -First 1).FullName ahk-tools\ahk2exe
           Get-ChildItem ahk2exe-zip
-          $base = Get-ChildItem ahk-tools\ahk -Recurse -Filter AutoHotkey64.exe | Select-Object -First 1
           $compiler = Get-ChildItem ahk-tools\ahk2exe -Recurse -Filter Ahk2Exe.exe | Select-Object -First 1
-          echo "AutoHotkey64.exe $($base.VersionInfo.FileVersion), $($base.Length) bytes, $((Get-FileHash $base).Hash)"
           echo "Ahk2Exe.exe $($compiler.VersionInfo.FileVersion), $((Get-FileHash $compiler.FullName).Hash)"
-          echo "AHK_BASE=$($base.FullName)" >> $env:GITHUB_ENV
           echo "AHK2EXE=$($compiler.FullName)" >> $env:GITHUB_ENV
       - name: Check the scripts load
         shell: pwsh
         run: |
           $bad = $false
-          foreach ($v in "full", "noupdate", "bare") {
-            $p = Start-Process -FilePath $env:AHK_BASE -ArgumentList "/ErrorStdOut", "/Validate", "probes\ahk\$v.ahk" -NoNewWindow -PassThru -RedirectStandardOutput "validate-$v.out" -RedirectStandardError "validate-$v.err"
-            $null = $p.Handle
-            if (-not $p.WaitForExit(60000)) { $p.Kill(); echo "::error title=AutoHotkey $v::validation hung"; $bad = $true; continue }
-            $text = (Get-Content "validate-$v.out", "validate-$v.err" -Raw -ErrorAction SilentlyContinue) -join ""
-            echo "${v}: exit $($p.ExitCode) $text"
-            if ($p.ExitCode -ne 0 -or $text -match "Error|Warning") { echo "::error title=AutoHotkey $v::the script doesn't load cleanly"; $bad = $true }
+          foreach ($version in $env:AHK_VERSIONS -split ' ') {
+            foreach ($v in $env:AHK_VARIANTS -split ' ') {
+              $p = Start-Process -FilePath "ahk-tools\$version\AutoHotkey64.exe" -ArgumentList "/ErrorStdOut", "/Validate", "probes\ahk\$v.ahk" -NoNewWindow -PassThru -RedirectStandardOutput "validate.out" -RedirectStandardError "validate.err"
+              $null = $p.Handle
+              if (-not $p.WaitForExit(60000)) { $p.Kill(); echo "::error title=AutoHotkey $version $v::validation hung"; $bad = $true; continue }
+              $text = (Get-Content "validate.out", "validate.err" -Raw -ErrorAction SilentlyContinue) -join ""
+              echo "$version ${v}: exit $($p.ExitCode) $text"
+              if ($p.ExitCode -ne 0 -or $text -match "Error|Warning") { echo "::error title=AutoHotkey $version $v::the script doesn't load cleanly"; $bad = $true }
+            }
           }
           if ($bad) { exit 1 }
       - name: Compile the AutoHotkey trials
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force trials | Out-Null
-          foreach ($v in "full", "noupdate", "bare") {
-            $out = "$pwd\trials\SynSeeder-ahk-$v.exe"
-            $p = Start-Process -FilePath $env:AHK2EXE -ArgumentList "/in", "$pwd\probes\ahk\$v.ahk", "/out", $out, "/base", $env:AHK_BASE, "/compress", "0", "/silent", "verbose" -NoNewWindow -PassThru -RedirectStandardOutput "compile-$v.out" -RedirectStandardError "compile-$v.err"
-            $null = $p.Handle
-            if (-not $p.WaitForExit(120000)) { $p.Kill(); echo "::error title=Ahk2Exe $v::compiling hung"; exit 1 }
-            Get-Content "compile-$v.out", "compile-$v.err" -ErrorAction SilentlyContinue
-            if ($p.ExitCode -ne 0 -or -not (Test-Path $out)) { echo "::error title=Ahk2Exe $v::compiling failed (exit code $($p.ExitCode))"; exit 1 }
+          foreach ($version in $env:AHK_VERSIONS -split ' ') {
+            foreach ($v in $env:AHK_VARIANTS -split ' ') {
+              $out = "$pwd\trials\SynSeeder-ahk-$version-$v.exe"
+              $p = Start-Process -FilePath $env:AHK2EXE -ArgumentList "/in", "$pwd\probes\ahk\$v.ahk", "/out", $out, "/base", "$pwd\ahk-tools\$version\AutoHotkey64.exe", "/compress", "0", "/silent", "verbose" -NoNewWindow -PassThru -RedirectStandardOutput "compile.out" -RedirectStandardError "compile.err"
+              $null = $p.Handle
+              if (-not $p.WaitForExit(120000)) { $p.Kill(); echo "::error title=Ahk2Exe $version $v::compiling hung"; exit 1 }
+              Get-Content "compile.out", "compile.err" -ErrorAction SilentlyContinue
+              if ($p.ExitCode -ne 0 -or -not (Test-Path $out)) { echo "::error title=Ahk2Exe $version $v::compiling failed (exit code $($p.ExitCode))"; exit 1 }
+            }
           }
           Get-ChildItem trials | ForEach-Object { echo "$($_.Name) $($_.Length) bytes $((Get-FileHash $_.FullName).Hash)" }
       - name: Self-test
         shell: pwsh
         run: |
-          foreach ($v in "full", "noupdate") {
-            $p = Start-Process -FilePath "trials\SynSeeder-ahk-$v.exe" -ArgumentList "--selftest", "$pwd\ahk-$v.log" -PassThru
+          foreach ($version in $env:AHK_VERSIONS -split ' ') {
+            $name = "ahk-$version-full"
+            $p = Start-Process -FilePath "trials\SynSeeder-$name.exe" -ArgumentList "--selftest", "$pwd\$name.log" -PassThru
             $null = $p.Handle
             $done = $p.WaitForExit(120000)
             if (-not $done) { $p.Kill() }
-            if (Test-Path "ahk-$v.log") { Get-Content "ahk-$v.log" }
-            if ($done -and $p.ExitCode -eq 0) { echo "::notice title=AutoHotkey $v self-test::passed" }
-            else { echo "::warning title=AutoHotkey $v self-test::failed (finished: $done, exit code: $($p.ExitCode))" }
+            if (Test-Path "$name.log") { Get-Content "$name.log" }
+            if ($done -and $p.ExitCode -eq 0) { echo "::notice title=AutoHotkey $version full self-test::passed" }
+            else { echo "::warning title=AutoHotkey $version full self-test::failed (finished: $done, exit code: $($p.ExitCode))" }
           }
       - uses: actions/upload-artifact@v4
         with:
@@ -147,7 +153,8 @@ jobs:
         continue-on-error: true
         env:
           VT_API_KEY: ${{ secrets.VT_API_KEY }}
-        run: python3 tools/vt_scan.py trials/*.exe
+        # The old seeder from SYN-Seed-Script (0/71 when it was last scanned) gets a fresh scan as a control.
+        run: python3 tools/vt_scan.py --rescan feed85baa5887428f63bbc083bbc860388c1e3fb3507d357969c17669bb045fc:old-Seeder.exe trials/*.exe
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -1,6 +1,6 @@
 """Scan files on VirusTotal from CI and report each engine's verdict.
 
-    python tools/vt_scan.py FILE [FILE ...]
+    python tools/vt_scan.py [--rescan SHA256[:NAME] ...] FILE [FILE ...]
 
 Needs a VirusTotal API key in the VT_API_KEY environment variable (a free
 account's key works). Without one it says so and exits 0, so builds still
@@ -8,7 +8,10 @@ pass on forks and before the key is added.
 
 It uploads every file first (files over 32 MB through a one-time upload URL),
 then waits until every engine has reported on each, and prints the ratio and
-every engine that flagged it. In GitHub Actions each result also becomes an
+every engine that flagged it. --rescan asks VirusTotal to scan a file it
+already has again, by its SHA-256, without needing the file. When VirusTotal
+won't take a file again so soon (HTTP 409), it asks for a rescan instead, and
+if that's refused too it reports the file's latest finished scan and its date. In GitHub Actions each result also becomes an
 annotation on the run and a row in the job summary. The full result goes to
 vt-results.json.
 
@@ -78,32 +81,82 @@ def upload(path: Path, key: str) -> str:
     return _request("POST", url, key, body, {"Content-Type": content_type})["data"]["id"]
 
 
+def rescan(sha256: str, key: str) -> str | None:
+    """Asks for a fresh scan of a file VirusTotal already has; None when it won't scan it again yet."""
+    try:
+        return _request("POST", f"{API}/files/{sha256}/analyse", key)["data"]["id"]
+    except RuntimeError as error:
+        if "HTTP 409" in str(error):
+            return None
+        raise
+
+
+def submit(path: Path, sha256: str, key: str) -> str | None:
+    """Uploads a file, or asks for a rescan when VirusTotal already took the same file recently."""
+    try:
+        return upload(path, key)
+    except RuntimeError as error:
+        if "HTTP 409" not in str(error):
+            raise
+    print("  VirusTotal had this exact file already, so asking for a rescan instead.", flush=True)
+    return rescan(sha256, key)
+
+
+def latest(sha256: str, key: str) -> dict:
+    """The file's latest finished scan, in the same shape as an analysis, waiting while it has none yet."""
+    deadline = time.monotonic() + TIMEOUT
+    while time.monotonic() < deadline:
+        try:
+            attributes = _request("GET", f"{API}/files/{sha256}", key)["data"]["attributes"]
+        except RuntimeError as error:
+            if "HTTP 404" not in str(error):
+                raise
+            attributes = {}
+        if attributes.get("last_analysis_results"):
+            return {"stats": attributes.get("last_analysis_stats", {}), "results": attributes["last_analysis_results"],
+                    "date": attributes.get("last_analysis_date"), "size": attributes.get("size")}
+        time.sleep(60)
+    raise RuntimeError(f"VirusTotal had no finished scan of {sha256} within {TIMEOUT // 60} minutes")
+
+
 def wait_for(analysis_id: str, key: str) -> dict:
     """Polls until every engine has reported; returns the analysis attributes."""
     deadline = time.monotonic() + TIMEOUT
+    missing = 0
     while time.monotonic() < deadline:
-        attributes = _request("GET", f"{API}/analyses/{analysis_id}", key)["data"]["attributes"]
+        try:
+            attributes = _request("GET", f"{API}/analyses/{analysis_id}", key)["data"]["attributes"]
+        except RuntimeError as error:
+            # A fresh upload's analysis can take a moment to show up.
+            if "HTTP 404" not in str(error) or missing >= 5:
+                raise
+            missing += 1
+            time.sleep(30)
+            continue
         if attributes.get("status") == "completed":
             return attributes
         time.sleep(60)
     raise RuntimeError(f"analysis {analysis_id} didn't finish within {TIMEOUT // 60} minutes")
 
 
-def summarise(path: Path, attributes: dict) -> dict:
+def summarise(name: str, sha256: str, size: int | None, attributes: dict, fresh: bool) -> dict:
     stats = attributes.get("stats", {})
     results = attributes.get("results", {})
     flagged = sorted(
-        (name, verdict.get("result") or verdict.get("category"))
-        for name, verdict in results.items() if verdict.get("category") in FLAGGED
+        (engine, verdict.get("result") or verdict.get("category"))
+        for engine, verdict in results.items() if verdict.get("category") in FLAGGED
     )
     scanned = sum(stats.get(k, 0) for k in ("malicious", "suspicious", "undetected", "harmless"))
+    when = attributes.get("date")
     return {
-        "file": path.name,
-        "bytes": path.stat().st_size,
-        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        "file": name,
+        "bytes": size if size is not None else attributes.get("size"),
+        "sha256": sha256,
         "flagged": flagged,
         "ratio": f"{len(flagged)}/{scanned}",
         "stats": stats,
+        "scanned": ("fresh scan" if fresh else "earlier scan") + (
+            time.strftime(" %Y-%m-%d %H:%M UTC", time.gmtime(when)) if when else ""),
     }
 
 
@@ -119,33 +172,50 @@ def annotate(report: dict) -> None:
     names = ", ".join(f"{engine} ({label})" for engine, label in report["flagged"]) or "No engine flagged it."
     level = "warning" if report["flagged"] else "notice"
     title = _escape(f"VirusTotal {report['file']} {report['ratio']}", prop=True)
-    print(f"::{level} title={title}::{_escape(names)} sha256 {report['sha256']}", flush=True)
+    print(f"::{level} title={title}::{_escape(names)} ({report['scanned']}) sha256 {report['sha256']}", flush=True)
 
 
 def main(argv: list[str]) -> int:
-    files = [Path(arg) for arg in argv]
+    items = []  # (name, sha256, local path or None)
+    args = iter(argv)
+    for arg in args:
+        if arg == "--rescan":
+            sha256, _, name = next(args, "").partition(":")
+            items.append((name or sha256, sha256.lower(), None))
+        else:
+            path = Path(arg)
+            items.append((path.name, hashlib.sha256(path.read_bytes()).hexdigest(), path))
     key = os.environ.get("VT_API_KEY", "").strip()
     if not key:
         print("VT_API_KEY isn't set, so nothing was scanned.")
         return 0
     pending, reports, failed = [], [], False
-    for path in files:  # upload everything first, so the engines work on all of them at once
-        print(f"Uploading {path.name} ({path.stat().st_size:,} bytes)...", flush=True)
+    for name, sha256, path in items:  # send everything first, so the engines work on all of them at once
         try:
-            pending.append((path, upload(path, key)))
+            if path:
+                print(f"Uploading {name} ({path.stat().st_size:,} bytes)...", flush=True)
+                analysis = submit(path, sha256, key)
+            else:
+                print(f"Asking for a rescan of {name} ({sha256})...", flush=True)
+                analysis = rescan(sha256, key)
         except (RuntimeError, OSError, KeyError, ValueError) as error:
-            print(f"  couldn't upload it: {error}")
+            print(f"  couldn't send it: {error}")
             failed = True
-    for path, analysis in pending:
-        print(f"Waiting for the engines on {path.name}...", flush=True)
+            continue
+        if analysis is None:
+            print("  VirusTotal won't scan it again yet, so this uses its latest scan.", flush=True)
+        pending.append((name, sha256, path, analysis))
+    for name, sha256, path, analysis in pending:
+        print(f"Waiting for the engines on {name}...", flush=True)
         try:
-            report = summarise(path, wait_for(analysis, key))
+            attributes = wait_for(analysis, key) if analysis else latest(sha256, key)
+            report = summarise(name, sha256, path.stat().st_size if path else None, attributes, analysis is not None)
         except (RuntimeError, OSError, KeyError, ValueError) as error:
             print(f"  couldn't scan it: {error}")
             failed = True
             continue
         reports.append(report)
-        print(f"  {report['ratio']}  sha256 {report['sha256']}")
+        print(f"  {report['ratio']}  ({report['scanned']})  sha256 {report['sha256']}")
         print(f"  https://www.virustotal.com/gui/file/{report['sha256']}")
         for engine, label in report["flagged"]:
             print(f"    {engine}: {label}")
@@ -153,11 +223,11 @@ def main(argv: list[str]) -> int:
     Path("vt-results.json").write_text(json.dumps(reports, indent=1))
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:
-        lines = ["## VirusTotal", "", "| File | Result | Flagged by |", "|---|---|---|"]
+        lines = ["## VirusTotal", "", "| File | Result | Flagged by | Scan |", "|---|---|---|---|"]
         for report in reports:
             names = ", ".join(f"{engine} ({label})" for engine, label in report["flagged"]) or "nobody"
             link = f"[{report['ratio']}](https://www.virustotal.com/gui/file/{report['sha256']})"
-            lines.append(f"| {report['file']} | {link} | {names} |")
+            lines.append(f"| {report['file']} | {link} | {names} | {report['scanned']} |")
         with open(summary, "a", encoding="utf-8") as out:
             out.write("\n".join(lines) + "\n")
     if failed:
