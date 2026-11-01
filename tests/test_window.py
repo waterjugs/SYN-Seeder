@@ -11,6 +11,7 @@ from seeder import crcon, schedule, window
 from seeder.config import Config
 
 LOAD_SERVER = window.SetupWindow._load_server  # the fixture swaps it out
+LOOK = window.SetupWindow._check_seed  # this one too
 ROOT = Path(__file__).resolve().parent.parent
 
 needs_display = pytest.mark.skipif(os.name != "nt" and not os.environ.get("DISPLAY"), reason="no display for Tk")
@@ -30,6 +31,7 @@ def calls(monkeypatch, tmp_path):
     monkeypatch.setattr(window, "_start_seed_process", lambda: made.append(("seed",)))
     monkeypatch.setattr(window.instance, "seeding_processes", lambda: [])
     monkeypatch.setattr(window.SetupWindow, "_load_server", lambda self: None)  # no thread, no network
+    monkeypatch.setattr(window.SetupWindow, "_check_seed", lambda self, epoch: None)  # no process scan
     monkeypatch.setattr(window.Game, "running", lambda self: False)
     return made
 
@@ -107,12 +109,12 @@ class FakeFetch:
 
     hang = False
 
-    def __init__(self, target, daemon):
-        self.target, self.daemon, self.running = target, daemon, False
+    def __init__(self, target, daemon, args=()):
+        self.target, self.daemon, self.args, self.running = target, daemon, args, False
 
     def start(self):
         if not FakeFetch.hang:
-            self.target()
+            self.target(*self.args)
         self.running = FakeFetch.hang
 
     def is_alive(self):
@@ -122,6 +124,7 @@ class FakeFetch:
 @pytest.fixture
 def fetches(win, monkeypatch):
     win._fetch.join()  # the window's own first fetch, a no-op here
+    win._seed_check.join()  # and its first look for a run
     loads, timers = [], []
     FakeFetch.hang = False
     monkeypatch.setattr(window.threading, "Thread", FakeFetch)
@@ -216,6 +219,52 @@ def test_stop_with_nothing_running(win, monkeypatch):
     monkeypatch.setattr(window.instance, "stop_seeding", lambda: False)
     win.stop()
     assert win.status.cget("text") == "Nothing is seeding right now."
+
+
+def test_window_keeps_looking_for_a_run(win, fetches):
+    _, timers = fetches
+    win._watch_seed()
+    assert timers == [(window.SEED_CHECK_MS, win._watch_seed)]
+    assert win._seed_check.daemon  # off the Tk thread
+
+
+def test_status_says_when_a_run_starts_and_ends_by_itself(win):
+    start = win.status.cget("text")
+    win._show_seeding(False, win._seed_epoch)  # first look, nothing running
+    assert win.status.cget("text") == start
+    win._show_seeding(True, win._seed_epoch)  # e.g. the schedule started one
+    assert win.status.cget("text").startswith("Seeding now.")
+    win._show_seeding(False, win._seed_epoch)  # Ctrl+Alt+End, seeded, or the 4-hour limit
+    assert win.status.cget("text") == "The run has ended."
+
+
+def test_status_after_seed_now_ends_when_the_run_does(win, calls):
+    looked = win._seed_epoch
+    win.seed_now()
+    win._show_seeding(False, looked)  # a look from before the button: the run hadn't started yet
+    assert win.status.cget("text").startswith("Seeding started.")
+    win._show_seeding(True, win._seed_epoch)
+    assert win.status.cget("text").startswith("Seeding started.")  # no change while it runs
+    win._show_seeding(False, win._seed_epoch)
+    assert win.status.cget("text") == "The run has ended."
+
+
+def test_stop_message_stays(win, monkeypatch):
+    win._show_seeding(True, win._seed_epoch)
+    monkeypatch.setattr(window.instance, "stop_seeding", lambda: True)
+    monkeypatch.setattr(window.Game, "close", lambda self: None)
+    win.stop()
+    win._show_seeding(False, win._seed_epoch)
+    assert win.status.cget("text") == "Stopped seeding and closed the game."
+
+
+def test_check_seed_reports_from_its_thread(win, monkeypatch):
+    shown = []
+    monkeypatch.setattr(window.instance, "seeding_processes", lambda: [object()])
+    monkeypatch.setattr(win.root, "after", lambda ms, then: then())
+    monkeypatch.setattr(win, "_show_seeding", lambda running, epoch: shown.append((running, epoch)))
+    LOOK(win, 7)
+    assert shown == [(True, 7)]
 
 
 def labelled(widget: tk.Misc, text: str) -> tk.Misc:

@@ -42,6 +42,7 @@ TRACK = "#272B3F"        # empty part of the player meter
 PLAYERS_MAX = 100
 MARGIN = 24              # left and right of everything under the header, at 100% scaling
 SERVER_REFRESH_MS = 30_000  # how often the player count is fetched again while the window is open
+SEED_CHECK_MS = 3_000  # how often the window looks for a running seed, so its status line stays true
 TERMS_URL = "https://github.com/waterjugs/SYN-Vietnam-Seeder/blob/main/TERMS.md"
 PRIVACY_URL = "https://github.com/waterjugs/SYN-Vietnam-Seeder/blob/main/PRIVACY.md"
 
@@ -184,6 +185,9 @@ class SetupWindow:
         self._images: dict[str, tk.PhotoImage] = {}
         self._fetch: threading.Thread | None = None  # the latest player-count fetch
         self._count: int | None = None  # the player count on show
+        self._seed_check: threading.Thread | None = None  # the latest look for a running seed
+        self._seeding: bool | None = None  # whether a run was going at the last look (None: not looked yet)
+        self._seed_epoch = 0  # bumped by Seed now and Stop seeding, so an older look can't undo what they show
         self._fonts()
         self._style()
         self._icon()
@@ -292,6 +296,7 @@ class SetupWindow:
 
         self._show()
         self._refresh_server()
+        self._watch_seed()
 
     # The look
 
@@ -481,6 +486,28 @@ class SetupWindow:
         count = status.player_count if status else None
         self.root.after(0, lambda: self._show_server(count))
 
+    def _watch_seed(self) -> None:
+        # Off the Tk thread: listing every process's command line takes a moment on Windows.
+        if self._seed_check is None or not self._seed_check.is_alive():
+            self._seed_check = threading.Thread(target=self._check_seed, args=(self._seed_epoch,), daemon=True)
+            self._seed_check.start()
+        self.root.after(SEED_CHECK_MS, self._watch_seed)
+
+    def _check_seed(self, epoch: int) -> None:
+        running = bool(instance.seeding_processes())
+        self.root.after(0, lambda: self._show_seeding(running, epoch))
+
+    def _show_seeding(self, running: bool, epoch: int) -> None:
+        """Keeps the status line true when a run starts or ends outside the buttons:
+        Ctrl+Alt+End, the schedule, the server filling up, or the 4-hour limit."""
+        if epoch != self._seed_epoch or running == self._seeding:
+            return
+        was, self._seeding = self._seeding, running
+        if running:
+            self.status.config(text="Seeding now. Ctrl+Alt+End or Stop seeding ends it.", foreground=MIST)
+        elif was:
+            self.status.config(text="The run has ended.", foreground=MIST)
+
     def save(self) -> None:
         self.config.start_time = f"{self.hour.get()}:{self.minute.get()}"
         self.config.launcher = self.launcher.get()
@@ -511,10 +538,14 @@ class SetupWindow:
                                     "a game you're playing.")
             return
         _start_seed_process()
+        self._seed_epoch += 1
+        self._seeding = True
         self.status.config(text="Seeding started. The game will open shortly; leave the "
                                 "mouse and keyboard alone while it joins.")
 
     def stop(self) -> None:
+        self._seed_epoch += 1
+        self._seeding = False
         if instance.stop_seeding():
             Game(self.config).close()
             self.status.config(text="Stopped seeding and closed the game.")
