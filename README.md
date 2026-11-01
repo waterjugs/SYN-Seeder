@@ -20,7 +20,7 @@ at 2560x1080, 3440x1440 and 5120x2160.
    doesn't carry over between Steam and Epic, so do them on the store you'll
    seed with.
 2. Download `SynSeeder.exe` from the
-   [latest release](https://github.com/waterjugs/SYN-Vietnam-Seeder/releases/latest)
+   [latest release](https://github.com/waterjugs/SYN-Seeder/releases/latest)
    and double-click it. Windows may say "Windows protected your PC"
    because the exe isn't code-signed: click **More info**, then
    **Run anyway**.

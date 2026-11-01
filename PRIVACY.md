@@ -90,6 +90,6 @@ Unless you've sent us files, we never receive any of this, so there's nothing to
 
 **Changes.** If a new version will collect, keep or send anything new, we'll update this policy at least 14 days before we release it. We'll change the date at the top and say so in the release notes. Updates install themselves, so check this page now and then, or turn updates off if you'd rather decide for yourself.
 
-**Contact.** Questions about this policy: open an issue at [github.com/waterjugs/SYN-Vietnam-Seeder/issues](https://github.com/waterjugs/SYN-Vietnam-Seeder/issues). For anything about your own files, message us privately on [Discord](https://discord.com/users/132721731096936448) instead. Issues are public, so don't paste your log or screenshots there without checking them first.
+**Contact.** Questions about this policy: open an issue at [github.com/waterjugs/SYN-Seeder/issues](https://github.com/waterjugs/SYN-Seeder/issues). For anything about your own files, message us privately on [Discord](https://discord.com/users/132721731096936448) instead. Issues are public, so don't paste your log or screenshots there without checking them first.
 
 Using SynSeeder is also covered by the [SynSeeder Terms of Service](TERMS.md).

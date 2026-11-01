@@ -44,7 +44,7 @@ from .config import app_dir
 
 log = logging.getLogger(__name__)
 
-LATEST_RELEASE = "https://api.github.com/repos/waterjugs/SYN-Vietnam-Seeder/releases/latest"
+LATEST_RELEASE = "https://api.github.com/repos/waterjugs/SYN-Seeder/releases/latest"
 ASSET_NAME = "SynSeeder.exe"
 UPDATE_NAME = "SynSeeder-update.exe"
 FAILURES_NAME = "update-failed.json"  # in app_dir(): the release that last failed to start, and how often

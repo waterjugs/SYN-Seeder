@@ -37,7 +37,7 @@ It's designed to send keys and clicks only while the game is the active window, 
 
 We give you a free, personal, non-exclusive, non-transferable licence to download and run SynSeeder on PCs you own or control, under these terms. We can end it if you break them.
 
-SynSeeder's source code is public on GitHub so anyone can see what it does. It has no open-source licence, so we keep all rights in it. GitHub's own terms let anyone view the code and fork it on GitHub. Beyond that, don't sell SynSeeder, pass it off as your own, or share changed copies of the app. If we add an open-source licence later, that licence decides what you can do with the code. To share SynSeeder, link to the official [GitHub releases](https://github.com/waterjugs/SYN-Vietnam-Seeder/releases) rather than passing the exe around, so people get the current, unchanged version.
+SynSeeder's source code is public on GitHub so anyone can see what it does. It has no open-source licence, so we keep all rights in it. GitHub's own terms let anyone view the code and fork it on GitHub. Beyond that, don't sell SynSeeder, pass it off as your own, or share changed copies of the app. If we add an open-source licence later, that licence decides what you can do with the code. To share SynSeeder, link to the official [GitHub releases](https://github.com/waterjugs/SYN-Seeder/releases) rather than passing the exe around, so people get the current, unchanged version.
 
 SynSeeder includes third-party software that stays under its own licence, including Python, Tcl/Tk, OpenCV, FFmpeg, NumPy, OpenBLAS, psutil, mss, the PyInstaller bootloader and the Inter font. Nothing in these terms limits your rights under those licences.
 
@@ -93,4 +93,4 @@ Some places don't allow these exclusions or limits. There, they apply only as fa
 
 **The rest.** If a court finds part of these terms unenforceable, the rest still applies. If we don't enforce a term straight away, we can still enforce it later. These terms are the whole agreement between you and us about SynSeeder. They're governed by the laws of the United States of America, leaving aside any rule that would apply another place's law. If you live somewhere whose laws give you rights that an agreement can't take away, you keep those rights.
 
-**Contact.** Open an issue at [github.com/waterjugs/SYN-Vietnam-Seeder/issues](https://github.com/waterjugs/SYN-Vietnam-Seeder/issues). For anything private, such as sending us your log or screenshots, message us on [Discord](https://discord.com/users/132721731096936448) instead (Discord user ID 132721731096936448).
+**Contact.** Open an issue at [github.com/waterjugs/SYN-Seeder/issues](https://github.com/waterjugs/SYN-Seeder/issues). For anything private, such as sending us your log or screenshots, message us on [Discord](https://discord.com/users/132721731096936448) instead (Discord user ID 132721731096936448).

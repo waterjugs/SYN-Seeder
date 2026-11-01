@@ -24,7 +24,7 @@ def payload(tag="v1.2.0", data=EXE, **extra):
         "state": "uploaded",
         "size": len(data),
         "digest": "sha256:" + hashlib.sha256(data).hexdigest(),
-        "browser_download_url": f"https://github.com/waterjugs/SYN-Vietnam-Seeder/releases/download/{tag}/SynSeeder.exe",
+        "browser_download_url": f"https://github.com/waterjugs/SYN-Seeder/releases/download/{tag}/SynSeeder.exe",
     }
     asset.update(extra)
     return {"tag_name": tag, "draft": False, "prerelease": False, "assets": [{"name": "notes.txt"}, asset]}

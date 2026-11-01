@@ -294,8 +294,8 @@ def test_footer_links_open_the_terms_and_privacy_policy(win, monkeypatch):
     win.root.update()
     for text in ("Terms of Service", "Privacy Policy"):
         labelled(win.root, text).event_generate("<Button-1>")
-    assert opened == ["https://github.com/waterjugs/SYN-Vietnam-Seeder/blob/main/TERMS.md",
-                      "https://github.com/waterjugs/SYN-Vietnam-Seeder/blob/main/PRIVACY.md"]
+    assert opened == ["https://github.com/waterjugs/SYN-Seeder/blob/main/TERMS.md",
+                      "https://github.com/waterjugs/SYN-Seeder/blob/main/PRIVACY.md"]
 
 
 @needs_display

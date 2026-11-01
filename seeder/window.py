@@ -43,8 +43,8 @@ PLAYERS_MAX = 100
 MARGIN = 24              # left and right of everything under the header, at 100% scaling
 SERVER_REFRESH_MS = 30_000  # how often the player count is fetched again while the window is open
 SEED_CHECK_MS = 3_000  # how often the window looks for a running seed, so its status line stays true
-TERMS_URL = "https://github.com/waterjugs/SYN-Vietnam-Seeder/blob/main/TERMS.md"
-PRIVACY_URL = "https://github.com/waterjugs/SYN-Vietnam-Seeder/blob/main/PRIVACY.md"
+TERMS_URL = "https://github.com/waterjugs/SYN-Seeder/blob/main/TERMS.md"
+PRIVACY_URL = "https://github.com/waterjugs/SYN-Seeder/blob/main/PRIVACY.md"
 
 
 def _start_seed_process() -> None:
