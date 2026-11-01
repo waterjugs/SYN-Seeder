@@ -39,7 +39,33 @@ jobs:
             # Only an exe carrying this file updates itself (see seeder/update.py).
             echo "$GITHUB_REF_NAME" > assets/release.txt
           fi
+      - name: Compile PyInstaller's bootloader from source
+        # The ready-made bootloader that ships with PyInstaller is the same in
+        # every PyInstaller app, malware included, so some antivirus programs
+        # flag it on sight. Compiling it here, from the same PyInstaller
+        # release, gives SynSeeder.exe a bootloader of its own.
+        shell: bash
+        env:
+          PYINSTALLER_COMPILE_BOOTLOADER: "1"
+        run: |
+          bootloader() {
+            python -c "import hashlib, pathlib, sys, PyInstaller; p = pathlib.Path(PyInstaller.__file__).parent / 'bootloader' / 'Windows-64bit-intel' / 'runw.exe'; sys.stdout.write(hashlib.sha256(p.read_bytes()).hexdigest())"
+          }
+          before=$(bootloader)
+          pyinstaller=$(grep -i '^pyinstaller==' requirements-dev.txt | tr -d '\r')
+          pip install --no-cache-dir --force-reinstall --no-deps --no-binary pyinstaller "$pyinstaller"
+          after=$(bootloader)
+          echo "runw.exe: $before (PyInstaller's) -> $after (compiled here)"
+          if [ "$before" = "$after" ]; then
+            echo "::error::PyInstaller's bootloader wasn't recompiled"
+            exit 1
+          fi
       - run: pyinstaller --noconfirm SynSeeder.spec
+      - name: Show the exe's size and SHA-256
+        shell: bash
+        run: |
+          ls -l dist/SynSeeder.exe
+          sha256sum dist/SynSeeder.exe
       - uses: actions/upload-artifact@v4
         with:
           name: SynSeeder
