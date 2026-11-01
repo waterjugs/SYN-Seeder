@@ -1,8 +1,8 @@
 # PyInstaller recipe for SynSeeder.exe:  pyinstaller --noconfirm SynSeeder.spec
 # Same as the old one-line command, plus the window's images, the app icon and
-# the name and version Windows shows in Properties and Task Manager. Release
-# builds on GitHub also compile PyInstaller's bootloader first (see
-# .github/workflows/build.yml).
+# the name and version Windows shows in Properties and Task Manager.
+# Keep PyInstaller's ready-made bootloader: a bootloader compiled from source
+# was tried (2026-11-01) and drew one more antivirus flag, not fewer.
 
 import re
 import sys
