@@ -59,12 +59,29 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          Invoke-WebRequest https://www.autohotkey.com/download/ahk-v2.zip -OutFile ahk.zip
-          Expand-Archive ahk.zip ahk-tools\ahk
+          # From AutoHotkey's GitHub releases: autohotkey.com puts a browser check in front of downloads.
+          $tag = gh release list --repo AutoHotkey/AutoHotkey --exclude-pre-releases --limit 40 --json tagName --jq '.[].tagName' |
+            Where-Object { $_ -match '^v2\.0\.\d+$' } | Select-Object -First 1
+          echo "AutoHotkey release $tag"
+          gh release view $tag --repo AutoHotkey/AutoHotkey --json assets --jq '.assets[].name'
+          gh release download $tag --repo AutoHotkey/AutoHotkey --pattern "*.zip" --dir ahk-download
+          $zip = Get-ChildItem ahk-download\*.zip -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($zip) {
+            Expand-Archive $zip.FullName ahk-tools\ahk
+          } else {
+            gh release download $tag --repo AutoHotkey/AutoHotkey --pattern "*setup.exe" --dir ahk-download
+            $setup = Get-ChildItem ahk-download\*setup.exe | Select-Object -First 1
+            $p = Start-Process $setup.FullName -ArgumentList "/silent", "/installto", "$pwd\ahk-tools\ahk" -PassThru
+            $null = $p.Handle
+            if (-not $p.WaitForExit(180000)) { $p.Kill(); echo "::error::The AutoHotkey installer hung"; exit 1 }
+          }
+          # The zip has AutoHotkey64.exe at the top; an install keeps it in a v2 folder, maybe a few seconds later.
+          for ($i = 0; $i -lt 30 -and -not (Get-ChildItem ahk-tools\ahk -Recurse -Filter AutoHotkey64.exe -ErrorAction SilentlyContinue); $i++) { Start-Sleep 2 }
+          Get-ChildItem ahk-tools\ahk -Recurse -Filter *.exe | Select-Object FullName, Length
           gh release download --repo AutoHotkey/Ahk2Exe --pattern "*.zip" --dir ahk2exe-zip
           Expand-Archive (Get-ChildItem ahk2exe-zip\*.zip | Select-Object -First 1).FullName ahk-tools\ahk2exe
           Get-ChildItem ahk2exe-zip
-          $base = Get-Item ahk-tools\ahk\AutoHotkey64.exe
+          $base = Get-ChildItem ahk-tools\ahk -Recurse -Filter AutoHotkey64.exe | Select-Object -First 1
           $compiler = Get-ChildItem ahk-tools\ahk2exe -Recurse -Filter Ahk2Exe.exe | Select-Object -First 1
           echo "AutoHotkey64.exe $($base.VersionInfo.FileVersion), $($base.Length) bytes, $((Get-FileHash $base).Hash)"
           echo "Ahk2Exe.exe $($compiler.VersionInfo.FileVersion), $((Get-FileHash $compiler.FullName).Hash)"
