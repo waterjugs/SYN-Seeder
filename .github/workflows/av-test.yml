@@ -1,0 +1,36 @@
+name: av-test
+
+# Builds two tiny test apps with SynSeeder.exe's exact PyInstaller recipe, to
+# see what antivirus engines react to: the packaging itself, the libraries,
+# or SynSeeder's own code.
+on:
+  push:
+    branches: [test/av-hello]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-dev.txt
+      - name: Build HelloPlain.exe and HelloLibs.exe
+        shell: bash
+        run: |
+          for app in HelloPlain HelloLibs; do
+            sed -e "s#run_seeder.py#tools/avtest/$app.py#" -e "s#name=\"SynSeeder\"#name=\"$app\"#" SynSeeder.spec > $app.spec
+            grep -n "avtest\|name=" $app.spec
+            pyinstaller --noconfirm $app.spec
+            ls -l dist/$app.exe
+            sha256sum dist/$app.exe
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HelloPlain
+          path: dist/HelloPlain.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HelloLibs
+          path: dist/HelloLibs.exe
