@@ -56,7 +56,9 @@ python tools/make_assets.py  # redraw the window's images and the icon (needs Pi
 build.bat                    # makes dist\SynSeeder.exe
 ```
 
-Pushing a tag like `v1.0.1` publishes a release that installed copies pick
-up. Set `__version__` in `seeder/__init__.py` to match first, or the build
-fails. Settings live in `%APPDATA%\SynSeeder\config.json`, including
-`leave_delay_minutes` and `auto_update`.
+Pushing a tag like `v1.0.1` builds a draft release. Scan its exe on
+VirusTotal, then press **Publish** on GitHub; installed copies update only
+after that. Set `__version__` in `seeder/__init__.py` to match the tag
+first, or the build fails. Settings live in
+`%APPDATA%\SynSeeder\config.json`, including `leave_delay_minutes` and
+`auto_update`.
