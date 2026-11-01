@@ -49,7 +49,10 @@ jobs:
         with:
           name: SynSeeder
           path: dist/SynSeeder.exe
-      - name: Publish release
+      - name: Make a draft release
+        # A draft, so this exact exe can be scanned on VirusTotal first.
+        # Installed copies only see a release once someone presses Publish
+        # on GitHub (a draft never counts as the latest release).
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
         env:
@@ -61,4 +64,5 @@ jobs:
           By using SynSeeder you agree to its [Terms of Service]($docs/TERMS.md). The [Privacy Policy]($docs/PRIVACY.md) explains what it stores and sends."
           gh release create "${{ github.ref_name }}" dist/SynSeeder.exe \
             --title "SynSeeder ${{ github.ref_name }}" \
-            --notes "$notes"
+            --notes "$notes" \
+            --draft
