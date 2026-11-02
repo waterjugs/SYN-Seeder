@@ -65,6 +65,15 @@ RunSeed(config, passOn, installTo := "", oldPids := "") {
         return 0
     }
     Logs.Info("SynSeeder v" App.VERSION)
+    ; Named at once, so Stop seeding in the window can find this run even
+    ; while it updates itself.
+    stopping := false
+    stop() {
+        if !stopping
+            Logs.Info("Stop requested")
+        stopping := true
+    }
+    SeedLock.Announce(stop)
     try {
         if installTo != ""
             Updater.Install(installTo, oldPids ? oldPids : [])
@@ -73,14 +82,10 @@ RunSeed(config, passOn, installTo := "", oldPids := "") {
     } catch as err {  ; an update going wrong mustn't stop today's seeding
         Logs.Exception("Updating failed; carrying on with this version", err)
     }
-
-    stopping := false
-    stop() {
-        if !stopping
-            Logs.Info("Stop requested")
-        stopping := true
+    if stopping {
+        Logs.Info("Stopped")
+        return 0
     }
-    SeedLock.Announce(stop)
     if !WinApi.ListenForStopKey(stop)
         Logs.Warning("Another program has Ctrl+Alt+End, so it can't stop this run; use Stop seeding in SynSeeder's window")
     Logs.Info("Seeding. Press Ctrl+Alt+End to stop.")
