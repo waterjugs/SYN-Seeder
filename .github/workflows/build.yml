@@ -1,68 +1,242 @@
 name: build
 
+# Every push: run the tests on Windows, build SynSeeder.exe and check that it
+# starts. A v* tag also makes a draft release. Builds of main, release tags
+# and runs started by hand are then scanned on VirusTotal (branch pushes
+# aren't, to keep uploads to VirusTotal few).
+
 on:
   push:
-  pull_request:
   workflow_dispatch:
 
 permissions:
-  contents: write  # to publish releases from tags
+  contents: write  # to make and update draft releases
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+env:
+  # SynSeeder.exe is this AutoHotkey64.exe with the script added. 2.0.18 is
+  # the version whose builds scan clean (later ones drew antivirus flags), so
+  # both downloads are pinned by SHA-256.
+  AHK_VERSION: "2.0.18"
+  AHK_SHA256: "70031669FEF8C365A243322C52DF9C3F854271489E67C5A9FC3139F56BC357E9"
+  AHK2EXE_ZIP: "Ahk2Exe1.1.37.02a2.zip"
+  AHK2EXE_SHA256: "E54A599B19BAA5C1688849BBAE7A9CF049EEFCCD4F704C67941B40DA13A625B2"
 
 jobs:
-  test:
+  build:
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: pip install -r requirements-dev.txt
-      - run: python -m pytest -q
-      - name: Check the version, and mark a release build
+
+      - name: Get AutoHotkey and Ahk2Exe
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # From their GitHub releases: autohotkey.com puts a browser check in front of downloads.
+          gh release download "v$env:AHK_VERSION" --repo AutoHotkey/AutoHotkey --pattern "AutoHotkey_$env:AHK_VERSION.zip" --dir downloads
+          if ($LASTEXITCODE -ne 0) { echo "::error::Couldn't download AutoHotkey $env:AHK_VERSION"; exit 1 }
+          Expand-Archive "downloads\AutoHotkey_$env:AHK_VERSION.zip" ahk
+          $hash = (Get-FileHash ahk\AutoHotkey64.exe).Hash
+          if ($hash -ne $env:AHK_SHA256) { echo "::error::AutoHotkey64.exe has SHA-256 $hash, not the pinned one"; exit 1 }
+          $release = gh api "repos/AutoHotkey/Ahk2Exe/releases?per_page=100" | ConvertFrom-Json |
+            Where-Object { $_.assets.name -contains $env:AHK2EXE_ZIP } | Select-Object -First 1
+          if (-not $release) { echo "::error::No Ahk2Exe release has $env:AHK2EXE_ZIP"; exit 1 }
+          gh release download $release.tag_name --repo AutoHotkey/Ahk2Exe --pattern $env:AHK2EXE_ZIP --dir downloads
+          if ($LASTEXITCODE -ne 0) { echo "::error::Couldn't download $env:AHK2EXE_ZIP"; exit 1 }
+          Expand-Archive "downloads\$env:AHK2EXE_ZIP" ahk2exe
+          $compiler = Get-ChildItem ahk2exe -Recurse -Filter Ahk2Exe.exe | Select-Object -First 1
+          $hash = (Get-FileHash $compiler.FullName).Hash
+          if ($hash -ne $env:AHK2EXE_SHA256) { echo "::error::Ahk2Exe.exe has SHA-256 $hash, not the pinned one"; exit 1 }
+          echo "AutoHotkey $env:AHK_VERSION and Ahk2Exe $($compiler.VersionInfo.FileVersion), both as pinned"
+          echo "AHK2EXE=$($compiler.FullName)" >> $env:GITHUB_ENV
+
+      - name: Check the version
         shell: bash
         run: |
           # Installed copies compare the latest release's tag with their own
           # version to decide whether to update, so the version must be plain
-          # 1.2.3 and match the tag. Checked on every push, so a mistake here
-          # shows up before a tag. No print(): on Windows it ends the line
-          # with \r\n, and bash would keep the \r.
-          version=$(python -c "import sys, seeder; sys.stdout.write(seeder.__version__)")
+          # 1.2.3, the same in both places, and match the tag.
+          version=$(sed -n 's/^ *static VERSION := "\([^"]*\)".*/\1/p' src/App.ahk | tr -d '\r')
+          exe_version=$(sed -n 's/^;@Ahk2Exe-SetVersion //p' SynSeeder.ahk | tr -d '\r')
           if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::__version__ = \"$version\" in seeder/__init__.py isn't a plain version like 1.2.3"
+            echo "::error::VERSION = \"$version\" in src/App.ahk isn't a plain version like 1.2.3"
             exit 1
           fi
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            if [ "$GITHUB_REF_NAME" != "v$version" ]; then
-              echo "::error::Tag $GITHUB_REF_NAME doesn't match __version__ = \"$version\" in seeder/__init__.py"
-              exit 1
-            fi
-            # Only an exe carrying this file updates itself (see seeder/update.py).
-            echo "$GITHUB_REF_NAME" > assets/release.txt
+          if [ "$exe_version" != "$version" ]; then
+            echo "::error::;@Ahk2Exe-SetVersion in SynSeeder.ahk is \"$exe_version\", but VERSION in src/App.ahk is \"$version\""
+            exit 1
           fi
-      - run: pyinstaller --noconfirm SynSeeder.spec
-      - name: Show the exe's size and SHA-256
-        shell: bash
+          if [[ "$GITHUB_REF" == refs/tags/v* ]] && [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match VERSION = \"$version\" in src/App.ahk"
+            exit 1
+          fi
+          echo "SynSeeder $version"
+
+      - name: Check that the scripts load
+        shell: pwsh
         run: |
-          ls -l dist/SynSeeder.exe
-          sha256sum dist/SynSeeder.exe
+          foreach ($script in "SynSeeder.ahk", "tests\run_tests.ahk", "tests\vision_cases.ahk", "tests\window_shot.ahk") {
+            ./tools/run_ahk.ps1 -Program ahk\AutoHotkey64.exe -Arguments /ErrorStdOut, /Validate, $script -Seconds 60
+            if ($LASTEXITCODE -ne 0) { echo "::error::$script doesn't load"; exit 1 }
+          }
+
+      - name: Run the tests
+        shell: pwsh
+        run: |
+          ./tools/run_ahk.ps1 -Program ahk\AutoHotkey64.exe -Arguments /ErrorStdOut, tests\run_tests.ahk -Seconds 900 `
+            -Expect '^\d+ passed, 0 failed$'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Check the button finder on screenshots
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check --quiet opencv-python-headless==5.0.0.93 numpy==2.5.3
+          python tests/make_fixtures.py build/fixtures
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          ./tools/run_ahk.ps1 -Program ahk\AutoHotkey64.exe -Arguments /ErrorStdOut, tests\vision_cases.ahk, build\fixtures -Seconds 900 `
+            -Expect '^(\d+) of \1 cases passed;'
+
+      - name: Build SynSeeder.exe
+        shell: pwsh
+        run: |
+          # Only an exe built from a v* tag updates itself. COMMIT is where it
+          # downloads its button images and fonts from.
+          $release = if ($env:GITHUB_REF -like "refs/tags/v*") { "true" } else { "false" }
+          Set-Content src\Build.ahk -Encoding utf8 -Value @(
+            "; Written by the build (.github/workflows/build.yml).",
+            "class Build {",
+            "    static RELEASE := $release",
+            "    static COMMIT := `"$env:GITHUB_SHA`"",
+            "}")
+          Get-Content src\Build.ahk
+          New-Item -ItemType Directory -Force dist | Out-Null
+          ./tools/run_ahk.ps1 -Program $env:AHK2EXE -Arguments /in, "$pwd\SynSeeder.ahk", /out, "$pwd\dist\SynSeeder.exe", /base, "$pwd\ahk\AutoHotkey64.exe", /compress, 0, /silent, verbose -Seconds 120
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path dist\SynSeeder.exe)) { echo "::error::Ahk2Exe couldn't build SynSeeder.exe"; exit 1 }
+          $exe = Get-Item dist\SynSeeder.exe
+          echo "SynSeeder.exe: $($exe.Length) bytes, version $($exe.VersionInfo.FileVersion), SHA-256 $((Get-FileHash $exe.FullName).Hash)"
+
+      - name: Self-test SynSeeder.exe
+        shell: pwsh
+        run: |
+          # Starts the exe as players will, and checks what the tests can't:
+          # downloading the button images and fonts, the daily task, and
+          # Windows' own screen shrinking.
+          ./tools/run_ahk.ps1 -Program dist\SynSeeder.exe -Arguments --selftest, "$pwd\selftest.log" -Seconds 300
+          $code = $LASTEXITCODE
+          if (Test-Path selftest.log) { Get-Content selftest.log } else { echo "::error::The self-test wrote no log" }
+          exit $code
+
+      - name: Draw the window
+        shell: pwsh
+        run: |
+          ./tools/run_ahk.ps1 -Program ahk\AutoHotkey64.exe -Arguments /ErrorStdOut, tests\window_shot.ahk, "$pwd\window.png", 37 -Seconds 120
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          # The picture as text too, so it can be checked from the log alone.
+          $text = [Convert]::ToBase64String([IO.File]::ReadAllBytes("$pwd\window.png"))
+          echo "::group::window.png as base64"
+          for ($i = 0; $i -lt $text.Length; $i += 800) { echo ("window.png " + $text.Substring($i, [Math]::Min(800, $text.Length - $i))) }
+          echo "::endgroup::"
+
       - uses: actions/upload-artifact@v4
         with:
           name: SynSeeder
           path: dist/SynSeeder.exe
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: checks
+          path: |
+            selftest.log
+            window.png
+          if-no-files-found: ignore
+
       - name: Make a draft release
-        # A draft, so this exact exe can be scanned on VirusTotal first.
-        # Installed copies only see a release once someone presses Publish
-        # on GitHub (a draft never counts as the latest release).
+        # A draft, so the scan below sees this exact exe first. Installed
+        # copies only see a release once it's published on GitHub (a draft
+        # never counts as the latest release).
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          sha=$(sha256sum dist/SynSeeder.exe | cut -d' ' -f1)
           docs="https://github.com/$GITHUB_REPOSITORY/blob/$GITHUB_REF_NAME"
-          notes="Download SynSeeder.exe below and double-click it. See the README for setup.
+          notes="Download SynSeeder.exe below and double-click it. The [README]($docs/README.md) says how to set it up.
+
+          SHA-256 of SynSeeder.exe: \`$sha\`
 
           By using SynSeeder you agree to its [Terms of Service]($docs/TERMS.md). The [Privacy Policy]($docs/PRIVACY.md) explains what it stores and sends."
-          gh release create "${{ github.ref_name }}" dist/SynSeeder.exe \
-            --title "SynSeeder ${{ github.ref_name }}" \
+          gh release create "$GITHUB_REF_NAME" dist/SynSeeder.exe \
+            --title "SynSeeder $GITHUB_REF_NAME" \
             --notes "$notes" \
             --draft
+
+  scan:
+    needs: build
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: SynSeeder
+          path: dist
+
+      - name: Use the draft release's own copy
+        # Scans the very file players will download.
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --pattern SynSeeder.exe --dir release
+          cmp release/SynSeeder.exe dist/SynSeeder.exe
+          mv release/SynSeeder.exe dist/SynSeeder.exe
+
+      - name: Scan on VirusTotal
+        env:
+          VT_API_KEY: ${{ secrets.VT_API_KEY }}
+        run: python3 tools/vt_scan.py dist/SynSeeder.exe
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vt-results
+          path: vt-results.json
+          if-no-files-found: ignore
+
+      - name: Add the result to the draft release
+        # Only reached when no engine flagged it.
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ ! -f vt-results.json ]; then
+            echo "::warning::Nothing was scanned (no VT_API_KEY?), so the draft release is left as it is"
+            exit 0
+          fi
+          line=$(python3 - <<'EOF'
+          import json
+          report = json.load(open("vt-results.json"))[0]
+          engines = sum(report["stats"].get(k, 0) for k in ("malicious", "suspicious", "undetected", "harmless"))
+          link = "https://www.virustotal.com/gui/file/" + report["sha256"]
+          print("VirusTotal: %d of %d antivirus engines flagged this exact file ([report](%s), %s)."
+                % (len(report["flagged"]), engines, link, report["scanned"]))
+          EOF
+          )
+          body=$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json body --jq .body)
+          gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --notes "$body
+
+          $line"
+          echo "$line"

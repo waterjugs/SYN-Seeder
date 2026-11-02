@@ -3,12 +3,14 @@
 The seeder recognises HLL Vietnam's menus by matching these PNGs against
 the screen. They were cut from 2560x1440 Steam screenshots of game build
 v1.7 (October 2026) by `tools/crop_templates.py`, which holds the exact
-boxes. Frames and templates are both shrunk to 720px high and lightly
-blurred before matching, so the same set works from 720p to 1440p and up
-(tests/test_matching.py checks 720p, 1080p and 1440p against real
-screenshots; the screens in tests/screens/1080p were captured natively at
-1920x1080, and those in tests/screens/<width>x<height> natively at 2560x1080,
-3440x1440, 3840x2160 and 5120x2160). The game draws small text a little
+boxes. Each capture is shrunk by a whole factor to about 720px high, the
+templates are scaled to match, and both are lightly blurred before
+matching, so the same set works from 720p to 1440p and up
+(tests/vision_cases.ahk checks 720p, 1080p and 1440p against real
+screenshots, built by tests/make_fixtures.py; the screens in
+tests/screens/1080p were captured natively at 1920x1080, and those in
+tests/screens/<width>x<height> natively at 2560x1080, 3440x1440, 3840x2160
+and 5120x2160). The game draws small text a little
 differently at each resolution, so the two text templates also have a 1080p
 crop, `server_row.1080p.png` and `create_unit.1080p.png`, and two templates
 that scored too close to their cut-off at 2160p have a crop cut from a 4K or
@@ -40,3 +42,9 @@ after a screen height, like `name.1080p.png`, is taken as cut from a
 screenshot that tall; any other is taken as cut at 1440p. Players can
 override any of these without a new build by dropping a file with the same
 name into `%APPDATA%\SynSeeder\templates`.
+
+SynSeeder.exe doesn't carry these images inside it. The first time it needs
+them, it downloads them from this folder on GitHub, at the commit it was
+built from, and keeps only files whose SHA-256 matches `src/ButtonFiles.ahk`.
+After changing an image, put its new SHA-256 there (tests/run_tests.ahk says
+which ones changed).
