@@ -67,8 +67,17 @@ class SeedLock {
     ; handing over to a new version and has its window up.
     static Running() => SeedLock.HeldElsewhere() || SeedLock.Runs().Length > 0
 
-    ; Whether a process is still running, and ending one (SeedLock's, so tests can swap them).
+    ; Asks the run with main window ``hwnd`` to stop. Returns its process ID.
+    static Ask(hwnd) {
+        DllCall("GetWindowThreadProcessId", "Ptr", hwnd, "UInt*", &pid := 0)
+        DllCall("PostMessageW", "Ptr", hwnd, "UInt", SeedLock.StopMessage, "Ptr", 0, "Ptr", 0)
+        return pid
+    }
+
+    ; Whether a process is still running, waiting up to ``seconds`` for one to
+    ; end (true if it did), and ending one: SeedLock's, so tests can swap them.
     static Alive(pid) => ProcessExist(pid) != 0
+    static WaitEnd(pid, seconds) => ProcessWaitClose(pid, seconds) = 0
     static End(pid) => ProcessClose(pid)
 
     ; Starts a program that keeps running after this one exits. Returns its process ID.

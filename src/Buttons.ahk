@@ -42,33 +42,10 @@ class Buttons {
     ; Where a built SynSeeder.exe keeps the button images it downloads.
     static Folder => App.InstallDir "\buttons"
 
-    ; Makes sure ``folder`` holds every file in ``files`` (name -> SHA-256),
-    ; downloading missing or changed ones from the repository at ``ref`` (a
-    ; commit, or a branch for a build made outside CI). A download is only kept
-    ; if its checksum matches. Returns the names it couldn't get.
-    static Fetch(folder, files, ref) {
-        DirCreate(folder)
-        missing := []
-        for fileName, sha in files {
-            path := folder "\" fileName
-            if FileExist(path) && Sha256.File(path) = sha
-                continue
-            temp := path ".part"
-            try {
-                Http.Download("https://raw.githubusercontent.com/" App.REPO "/" ref "/templates/" fileName, temp, "image/png", 30)
-                if Sha256.File(temp) = sha {
-                    FileMove(temp, path, true)
-                    continue
-                }
-                Logs.Warning("Downloaded " fileName ", but it isn't the right file; not using it")
-            } catch as err {
-                Logs.Warning("Couldn't download the button image " fileName ": " err.Message)
-            }
-            try FileDelete(temp)
-            missing.Push(fileName)
-        }
-        return missing
-    }
+    ; Makes sure ``folder`` holds every button image in ``files`` (name ->
+    ; SHA-256), downloading them from templates/ in the repository at ``ref``.
+    ; Returns the names it couldn't get.
+    static Fetch(folder, files, ref) => RepoFiles.Fetch(folder, files, ref, "templates", "button image")
 
     ; What a file name says: "server_row.1080p.png" is server_row cut from a
     ; 1080-pixel-high screen; "roles_confirm.title.png" is another part of

@@ -26,6 +26,8 @@
 #Include ..\src\SeedLock.ahk
 #Include ..\src\DailyTask.ahk
 #Include ..\src\Updater.ahk
+#Include ..\src\FontFiles.ahk
+#Include ..\src\Look.ahk
 #Include ..\src\SetupWindow.ahk
 #Include ..\src\SelfTest.ahk
 #Include ..\src\Commands.ahk
