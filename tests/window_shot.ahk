@@ -33,7 +33,7 @@ Crashed(err, mode) {
     ExitApp(2)
 }
 
-out := A_Args.Length ? A_Args[1] : A_Temp "\window.png"
+out := A_Args.Length ? StartPath(A_Args[1]) : A_Temp "\window.png"
 players := A_Args.Length >= 2 ? A_Args[2] : "37"
 App.dirOverride := A_Temp "\synseeder-shot"
 Logs.echo := true
