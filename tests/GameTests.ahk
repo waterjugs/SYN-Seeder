@@ -148,6 +148,66 @@ class GameTests {
         AssertEq(api.calls, [])
     }
 
+    ; The screen
+
+    static Test_a_failed_capture_keeps_the_last_frame_and_is_logged_once() {
+        screen := GameScreen(Map())
+        Assert(screen.Refresh(), "Windows' screen couldn't be read at all")
+        Logs.capture := []
+        Patches.Set(GameScreen, "_Copy", (*) => false)
+        Assert(!screen.Refresh())
+        Assert(!screen.Refresh())
+        Assert(screen.vision.ready)  ; still matching against the last frame
+        AssertEq(Logs.capture.Length, 1)
+        Assert(InStr(Logs.capture[1], "WARNING Couldn't capture the screen") = 1, Logs.capture[1])
+        Patches.Undo()
+        Assert(screen.Refresh())
+        Patches.Set(GameScreen, "_Copy", (*) => false)
+        Assert(!screen.Refresh())
+        AssertEq(Logs.capture.Length, 2)  ; a new run of failures is logged again
+    }
+
+    static Test_flow_skips_a_tick_without_a_screen() {
+        screen := FakeScreen(HappyPath())
+        screen.Show("menu_enlist")
+        screen.DefineProp("Refresh", {Call: (*) => false})
+        AssertEq(Flow.CurrentScreen(screen), Flow.NO_SCREEN)
+    }
+
+    ; Stopping while the launcher starts the game
+
+    static Test_no_launch_when_already_asked_to_stop() {
+        starts := []
+        Patches.Set(HllGame, "Start", (this, uri) => starts.Push(uri))
+        game := HllGame(SeederConfig(), StoppingClock(0), FakeClock())
+        AssertThrows(SeedStopped, () => game.Launch(60))
+        AssertEq(starts, [])
+    }
+
+    static Test_a_stop_during_launch_closes_the_game_when_it_starts_late() {
+        Patches.Set(HllGame, "Start", (*) => "")
+        ended := []
+        Patches.Set(HllGame, "_End", (this, pid) => ended.Push(pid))
+        late := FakeClock()
+        game := HllGame(SeederConfig(), StoppingClock(10), late)
+        game.DefineProp("Window", {Call: (*) => 0})
+        game.DefineProp("Pid", {Call: (*) => late.at >= 30 ? 4321 : 0})  ; shows up 30 s after the stop
+        AssertThrows(SeedStopped, () => game.Launch(300))
+        AssertEq(ended, [4321])
+        Assert(late.at < HllGame.LATE_START_SECONDS)
+    }
+
+    static Test_a_stop_during_launch_watches_for_a_late_start_for_a_while() {
+        Patches.Set(HllGame, "Start", (*) => "")
+        Patches.Set(HllGame, "_End", (*) => Fail("nothing to close"))
+        late := FakeClock()
+        game := HllGame(SeederConfig(), StoppingClock(10), late)
+        game.DefineProp("Window", {Call: (*) => 0})
+        game.DefineProp("Pid", {Call: (*) => 0})
+        AssertThrows(SeedStopped, () => game.Launch(300))
+        AssertEq(late.at, HllGame.LATE_START_SECONDS)
+    }
+
     static Test_idle_counts_from_the_last_input() {
         AssertEq(WinApi.IdleMs(50000, 20000, "", ""), 30000)
         ; The latest input was ours: count from the player's, or from ours if we never saw theirs.
@@ -155,6 +215,15 @@ class GameTests {
         AssertEq(WinApi.IdleMs(50000, 20016, 20000, ""), 30000)
         ; The player moved the mouse after our click.
         AssertEq(WinApi.IdleMs(50000, 45000, 20000, 5000), 5000)
+    }
+
+    static Test_letters_are_pressed_on_any_keyboard_layout() {
+        AssertEq(WinApi.KeyFor("f", 0x46), 0x46)      ; US: F types f
+        AssertEq(WinApi.KeyFor("a", 0x51), 0x51)      ; French: the key marked A is VK_Q
+        AssertEq(WinApi.KeyFor("f", -1), 0x46)        ; Russian: no key types f, so F's own key
+        AssertEq(WinApi.KeyFor("y", 0x159), 0x59)     ; only with Shift: Y's own key, without it
+        AssertEq(WinApi.KeyFor("d", 0x644), 0x44)     ; only with AltGr
+        AssertEq(WinApi.KeyFor("1", -1), 0xFF)        ; not a letter: unchanged
     }
 
     static Test_idle_survives_tick_wraparound() {

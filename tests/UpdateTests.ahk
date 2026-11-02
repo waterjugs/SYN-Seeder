@@ -312,6 +312,29 @@ class UpdateTests {
         Assert(!FileExist(result.fresh))
     }
 
+    static Test_hand_over_starts_nothing_when_asked_to_stop_first() {
+        lock := FakeLock({takesLockAfter: 0})
+        result := HandOverWith(lock, StoppingClock(0))
+        AssertEq(result.taken, Updater.STOPPED)
+        AssertEq(lock.events, [])  ; kept the lock
+        Assert(FileExist(result.fresh))
+    }
+
+    static Test_hand_over_ends_the_new_version_when_asked_to_stop() {
+        lock := FakeLock()  ; never takes the lock
+        result := HandOverWith(lock, StoppingClock(3))
+        AssertEq(result.taken, Updater.STOPPED)
+        AssertEq(Slice(lock.events, lock.events.Length - 1), ["end 4242", "claim"])
+        Assert(FileExist(result.fresh))  ; still good for the next run
+    }
+
+    static Test_a_stopped_hand_over_isnt_a_failed_release() {
+        state := InstalledRelease()
+        state.starts := Updater.STOPPED
+        Assert(!Updater.UpdateAndHandOver(SeederConfig(), "--seed", state.exe))
+        AssertEq(Updater.Failures("v1.2.0"), 0)
+    }
+
     static Test_hand_over_yields_to_another_run_that_holds_the_lock() {
         lock := FakeLock({exitsAfter: 0, freeAtEnd: false})
         Assert(HandOverWith(lock).taken)

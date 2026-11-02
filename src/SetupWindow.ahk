@@ -12,6 +12,7 @@ class SetupWindow {
     static SERVER_TIMEOUT_MS := 15000
     static SEED_CHECK_MS := 3000       ; how often the window looks for a run, so its status line stays true
     static STOP_WAIT := 20             ; seconds a run gets to close the game and end, before it's ended
+    static START_GRACE_MS := 2000      ; for a run Seed now just started to name its window
     static CHECKING := "Checking the server..."
     static UNREACHABLE := "Couldn't reach the server stats."
 
@@ -24,6 +25,7 @@ class SetupWindow {
         this.seeding := ""        ; whether a run was going at the last look ("" until looked)
         this.spawned := 0         ; the run Seed now started
         this.busy := false        ; Stop seeding is waiting for runs to end
+        this.lateWatch := ""      ; after a stop that had to end a run: the timer watching for a late game
         this.request := ""        ; the player-count request in flight
         this.requestAt := 0
         this.picker := ""         ; the open hour or minute grid
@@ -134,9 +136,10 @@ class SetupWindow {
         }
         y += buttonH + px(12)
 
-        ; What's happening, on two lines so nothing jumps
+        ; What's happening, on two lines so nothing jumps (more for a long message, see Status)
         g.SetFont(f.body.Options(Look.MIST), f.body.face)
-        this.statusLine := g.Add("Text", "x" (M + pad) " y" (y + pad) " w" (CW - 2 * pad) " h" (2 * f.body.height) " Center +0x80", "")
+        this.statusW := CW - 2 * pad, this.statusH := this.statusMinH := 2 * f.body.height
+        this.statusLine := g.Add("Text", "x" (M + pad) " y" (y + pad) " w" this.statusW " h" this.statusH " Center +0x80", "")
         y += 2 * f.body.height + 2 * pad + px(14)
         this._Rule(M, y, CW, line)
         y += line + px(10)
@@ -190,6 +193,21 @@ class SetupWindow {
         ctrl.OnEvent("Click", action)
         ctrl.OnEvent("DoubleClick", action)  ; drawn buttons report a quick second click as a double click
         return Skin.Add(ctrl, paint)
+    }
+
+    ; The work area (the screen less the taskbar) of the monitor the rectangle
+    ; is on, or nearest to: {left, top, right, bottom}.
+    static WorkAreaAt(left, top, right, bottom) {
+        rect := Buffer(16, 0)
+        NumPut("Int", left, "Int", top, "Int", right, "Int", bottom, rect)
+        info := Buffer(40, 0)  ; MONITORINFO
+        NumPut("UInt", 40, info)
+        monitor := DllCall("MonitorFromRect", "Ptr", rect, "UInt", 2, "Ptr")  ; MONITOR_DEFAULTTONEAREST
+        if monitor && DllCall("GetMonitorInfoW", "Ptr", monitor, "Ptr", info)
+            return {left: NumGet(info, 20, "Int"), top: NumGet(info, 24, "Int"),
+                right: NumGet(info, 28, "Int"), bottom: NumGet(info, 32, "Int")}
+        MonitorGetWorkArea(MonitorGetPrimary(), &l, &t, &r, &b)
+        return {left: l, top: t, right: r, bottom: b}
     }
 
     ; Centres the window a third of the way down the screen, darkens its title bar, then shows it.
@@ -248,9 +266,45 @@ class SetupWindow {
     }
 
     Status(text, rgb := Look.MIST) {
+        this._FitStatus(text)
         this.statusLine.SetFont("c" Look.Hex(rgb))
         this.statusLine.Text := text
         this.statusColor := rgb
+    }
+
+    ; Makes the status line as tall as ``text`` needs (two lines at least),
+    ; moving what's below it and growing or shrinking the window to match.
+    _FitStatus(text) {
+        need := Max(this.statusMinH, SetupWindow.TextHeight(this.statusLine, text, this.statusW))
+        delta := need - this.statusH
+        if !delta
+            return
+        this.statusLine.GetPos(, &top)
+        for hwnd, ctrl in this.gui {
+            ctrl.GetPos(, &y)
+            if y > top
+                ctrl.Move(, y + delta)
+        }
+        this.statusLine.Move(, , , need)
+        this.statusH := need, this.height += delta
+        if DllCall("IsWindowVisible", "Ptr", this.gui.Hwnd) {
+            this.gui.GetPos(, , , &outer)
+            this.gui.Move(, , , outer + delta)
+        }
+    }
+
+    ; How tall ``text`` is in ``ctrl``'s font, wrapped at ``width`` pixels.
+    static TextHeight(ctrl, text, width) {
+        if text = ""
+            return 0
+        dc := DllCall("GetDC", "Ptr", ctrl.Hwnd, "Ptr")
+        old := DllCall("gdi32\SelectObject", "Ptr", dc, "Ptr", SendMessage(0x31, 0, 0, ctrl), "Ptr")  ; WM_GETFONT
+        rect := Buffer(16, 0)
+        NumPut("Int", width, rect, 8)
+        DllCall("DrawTextW", "Ptr", dc, "Str", text, "Int", -1, "Ptr", rect, "UInt", 0xC11)  ; DT_CALCRECT | DT_NOPREFIX | DT_WORDBREAK | DT_CENTER
+        DllCall("gdi32\SelectObject", "Ptr", dc, "Ptr", old)
+        DllCall("ReleaseDC", "Ptr", ctrl.Hwnd, "Ptr", dc)
+        return NumGet(rect, 12, "Int")
     }
 
     ; What the window does
@@ -341,9 +395,21 @@ class SetupWindow {
         return true
     }
 
+    ; A Stop seeding click waits until this has started the run, so it can
+    ; stop it: Critical holds other clicks back until it returns.
     SeedNow(*) {
+        was := A_IsCritical
+        Critical
+        try
+            this._SeedNow()
+        finally
+            Critical(was)  ; (a test calls it from its own thread)
+    }
+
+    _SeedNow() {
         if this.busy
             return
+        this.StopLateWatch()  ; it would close the game this run starts
         if SeedLock.Running() || (this.spawned && SeedLock.Alive(this.spawned)) {
             this.Status("Already seeding.")
             return
@@ -383,9 +449,17 @@ class SetupWindow {
         this.seeding := false, this.spawned := 0
         this.Status("Stopping...")
         try {
-            if this.EndRuns(spawned) {
+            ended := {forced: false}
+            if this.EndRuns(spawned, ended) {
                 HllGame(this.config).Close()
-                this.Status("Stopped seeding and closed the game.")
+                if ended.forced {
+                    ; It may have been waiting for the launcher to start the game.
+                    this.WatchLateGame(HllGame.LATE_START_SECONDS - SetupWindow.STOP_WAIT)
+                    this.Status("Stopped seeding and closed the game. If the launcher still starts the game "
+                        . "in the next minute, it's closed too.")
+                } else {
+                    this.Status("Stopped seeding and closed the game.")
+                }
             } else {
                 this.Status("Nothing is seeding right now.")
             }
@@ -400,34 +474,99 @@ class SetupWindow {
     ; Asks every run to stop (it closes the game and ends), and ends any that
     ; haven't within STOP_WAIT seconds. Looks again after each round, in case a
     ; run was handing over to a new version. ``spawned`` is a run Seed now
-    ; started that may not have named its window yet. True if there was a run.
-    EndRuns(spawned := 0) {
+    ; started that may not have named its window yet. True if there was a run;
+    ; ``ended.forced`` says if one had to be ended.
+    EndRuns(spawned := 0, ended := "") {
         found := false, passes := 0
-        deadline := A_TickCount + 5000  ; for a run that holds the lock but hasn't named its window yet
         while passes < 3 {
-            pids := []
-            for hwnd in SeedLock.Runs()
-                pids.Push(SeedLock.Ask(hwnd))
-            if spawned && SeedLock.Alive(spawned) && !SetupWindow._Has(pids, spawned)
-                pids.Push(spawned)
+            pids := this._AskRuns(spawned)
             spawned := 0
-            if !pids.Length {
-                if SeedLock.HeldElsewhere() && A_TickCount < deadline {
-                    Sleep(250)
-                    continue
-                }
-                break
+            ; A run holds the lock a moment before it names its window (a new
+            ; version taking over, for one): give it a few seconds to.
+            grace := A_TickCount + 5000
+            while !pids.Length && SeedLock.HeldElsewhere() && A_TickCount < grace {
+                Sleep(250)
+                pids := this._AskRuns(0)
             }
+            if !pids.Length
+                break
             found := true, passes++
             for pid in pids
                 if pid && !SeedLock.WaitEnd(pid, SetupWindow.STOP_WAIT) {
                     Logs.Warning("Run " pid " didn't stop by itself; ending it")
                     SeedLock.End(pid)
+                    if IsObject(ended)
+                        ended.forced := true
                 }
+        }
+        ; A new version a run was handing over to, not far enough along to
+        ; be asked (SynSeeder-update.exe only ever runs as one).
+        tried := Map()
+        while (pid := SeedLock.Find(Updater.UPDATE_NAME)) && !tried.Has(pid) {
+            tried[pid] := true
+            found := true
+            Logs.Warning("Ending " Updater.UPDATE_NAME " (" pid "), which was taking over a run")
+            SeedLock.End(pid)
+            SeedLock.WaitEnd(pid, 5)
         }
         if found
             Logs.Info("Stopped seeding from the window")
         return found
+    }
+
+    ; Asks every run with its window up to stop. Returns their process IDs.
+    ; ``spawned``, a run Seed now started, is asked too once its window is up
+    ; (within START_GRACE_MS of starting); if it doesn't get that far, it's
+    ; ended there and then, before it can start seeding (a run names its
+    ; window before it does anything else), and is in the list too.
+    _AskRuns(spawned) {
+        pids := []
+        for hwnd in SeedLock.Runs()
+            pids.Push(SeedLock.Ask(hwnd))
+        if !spawned || SetupWindow._Has(pids, spawned) || !SeedLock.Alive(spawned)
+            return pids
+        endAt := A_TickCount + SetupWindow.START_GRACE_MS
+        loop {
+            Sleep(100)
+            for hwnd in SeedLock.Runs() {
+                if SeedLock.Owner(hwnd) = spawned {
+                    pids.Push(SeedLock.Ask(hwnd))
+                    return pids
+                }
+            }
+            if !SeedLock.Alive(spawned)
+                return pids
+            if A_TickCount >= endAt
+                break
+        }
+        Logs.Info("Ending the run Seed now started before it got going")
+        SeedLock.End(spawned)
+        pids.Push(spawned)
+        return pids
+    }
+
+    ; For ``seconds`` after a stop that had to end a run, closes the game if
+    ; the launcher still starts it. Seed now cancels it.
+    WatchLateGame(seconds) {
+        this.StopLateWatch()
+        endAt := A_TickCount + seconds * 1000
+        check() {
+            if pid := HllGame(this.config).Pid() {
+                HllGame._End(pid)
+                this.StopLateWatch()
+                return
+            }
+            if A_TickCount >= endAt
+                this.StopLateWatch()
+        }
+        this.lateWatch := check
+        SetTimer(check, 2000)
+    }
+
+    StopLateWatch() {
+        if this.lateWatch
+            SetTimer(this.lateWatch, 0)
+        this.lateWatch := ""
     }
 
     ChooseLauncher(which) {
@@ -462,6 +601,7 @@ class SetupWindow {
     ; Stops the timers and closes the window without exiting (tests).
     Dispose() {
         SetTimer(this.pollTimer, 0)
+        this.StopLateWatch()
         this.ClosePicker()
         for ctrl in this.gui
             Skin.Forget(ctrl)
@@ -500,10 +640,10 @@ class SetupWindow {
         field.GetPos(&fx, &fy, &fw, &fh)
         WinGetClientPos(&cx, &cy, , , this.gui)
         x := cx + fx + fw - w, y := cy + fy + fh + px(4)
-        MonitorGetWorkArea(MonitorGetPrimary(), &left, &top, &right, &bottom)
-        if y + h > bottom
-            y := cy + fy - px(4) - h
-        x := Max(left, Min(x, right - w))
+        area := SetupWindow.WorkAreaAt(cx + fx, cy + fy, cx + fx + fw, cy + fy + fh)
+        if y + h > area.bottom
+            y := cy + fy - px(4) - h >= area.top ? cy + fy - px(4) - h : Max(area.top, area.bottom - h)
+        x := Max(area.left, Min(x, area.right - w))
         pop.Show("x" x " y" y " w" w " h" h)
     }
 

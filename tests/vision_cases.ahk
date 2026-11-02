@@ -119,6 +119,10 @@ Main() {
         ms := (t1 - t0) * 1000 / freq
         total += ms, slowest := Max(slowest, ms)
         problems := []
+        work := Vision.WorkSize(item["width"], item["height"])
+        if Abs(work[3] - item["factor"]) > 1e-9 || work[1] != frame.w || work[2] != frame.h
+            problems.Push("the case is " frame.w "x" frame.h " shrunk by " item["factor"] ", but the app would make "
+                . work[1] "x" work[2] " by " work[3])
         want := item["screen"]
         if screen != want
             problems.Push("saw " (screen = "" ? "nothing" : screen) ", expected " (want = "" ? "nothing" : want))

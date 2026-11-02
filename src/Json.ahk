@@ -175,21 +175,33 @@ class Json {
         throw ValueError("Unexpected " (ch = "" ? "end of text" : "'" ch "'") " at character " pos)
     }
 
+    ; The string whose opening quote is at ``pos``. Scanned with InStr rather
+    ; than one regular expression, which would hit PCRE's recursion limit on
+    ; strings of a few thousand characters (such as long release notes).
     static _String(text, &pos) {
-        if !RegExMatch(text, '\G"((?:[^"\\\x00-\x1F]|\\.)*)"', &m, pos)
+        start := pos + 1, from := start
+        loop {
+            close := InStr(text, '"', true, from)
+            if !close
+                throw ValueError("Broken text in quotes at character " pos)
+            slashes := 0  ; a quote after an odd number of backslashes is part of the text
+            while close - slashes - 1 >= start && SubStr(text, close - slashes - 1, 1) = "\"
+                slashes++
+            if !(slashes & 1)
+                break
+            from := close + 1
+        }
+        raw := SubStr(text, start, close - start)
+        if RegExMatch(raw, "[\x00-\x1F]")
             throw ValueError("Broken text in quotes at character " pos)
-        pos += m.Len
-        raw := m[1]
+        pos := close + 1
         if !InStr(raw, "\")
             return raw
         out := "", i := 1
-        while i <= StrLen(raw) {
-            ch := SubStr(raw, i, 1)
-            if ch != "\" {
-                out .= ch, i++
-                continue
-            }
-            esc := SubStr(raw, i + 1, 1)
+        while j := InStr(raw, "\", true, i) {
+            out .= SubStr(raw, i, j - i)
+            esc := SubStr(raw, j + 1, 1)
+            i := j + 2
             switch esc, true {
                 case '"', "\", "/": out .= esc
                 case "b": out .= "`b"
@@ -198,17 +210,16 @@ class Json {
                 case "r": out .= "`r"
                 case "t": out .= "`t"
                 case "u":
-                    hex := SubStr(raw, i + 2, 4)
+                    hex := SubStr(raw, i, 4)
                     if !RegExMatch(hex, "^[0-9A-Fa-f]{4}$")
-                        throw ValueError("Broken \u escape at character " pos)
+                        throw ValueError("Broken \u escape at character " (start + j - 1))
                     out .= Chr(Integer("0x" hex))
                     i += 4
                 default:
-                    throw ValueError("Unknown escape \" esc)
+                    throw ValueError("Unknown escape \" esc " at character " (start + j - 1))
             }
-            i += 2
         }
-        return out
+        return out SubStr(raw, i)
     }
 }
 

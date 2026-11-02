@@ -2,16 +2,25 @@
 
 class Buttons {
     ; Loads the button images in ``folder`` for Vision: a Map of name -> Array
-    ; of {img, cut, tag}, taking files in name order. ``only`` limits it to the
-    ; file names a Map has as keys.
+    ; of {img, cut, tag}, taking files in name order. ``only`` (a Map of file
+    ; name -> SHA-256) limits it to those files, and only while their
+    ; checksum matches.
     static Load(folder, only := "") {
         crops := Map()
         if folder = "" || !DirExist(folder)
             return crops
         names := ""
-        loop files folder "\*.png"
-            if !(only is Map) || only.Has(A_LoopFileName)
-                names .= A_LoopFileName "`n"
+        loop files folder "\*.png" {
+            if only is Map {
+                if !only.Has(A_LoopFileName)
+                    continue
+                if Sha256.File(A_LoopFilePath) != only[A_LoopFileName] {
+                    Logs.Warning("Not using the button image " A_LoopFileName ": it isn't the one this version expects")
+                    continue
+                }
+            }
+            names .= A_LoopFileName "`n"
+        }
         if names = ""
             return crops
         for fileName in StrSplit(Sort(RTrim(names, "`n"), "C"), "`n") {

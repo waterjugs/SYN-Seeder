@@ -6,22 +6,33 @@
 ; buttons carry a crop from several. A name with another word in it
 ; (roles_confirm.title.png) is a crop of a different part of the same screen.
 ;
-; Each capture is shrunk once by a whole factor f = round(height / 720), which
-; averages every f x f block of pixels (GameScreen.Shrink), giving a working
-; copy about 720 pixels high. A button is only looked for around the
-; spots where the game draws it. Spots are fractions of the game's menu area:
-; the whole screen at 16:9, and a 16:9 area in the middle of wider screens,
-; where the game keeps its menus at the size a 16:9 screen of that height gets.
+; Each capture is shrunk once (GameScreen.Shrink) to a working copy about 720
+; pixels high: by a whole factor f = round(height / 720), which averages every
+; f x f block of pixels, or, for captures from 721 to 1079 pixels high, to
+; exactly 720 high, averaging the pixels each working pixel covers. A button
+; is only looked for around the spots where the game draws it. Spots are
+; fractions of the game's menu area: the whole screen at 16:9, and a 16:9 area
+; in the middle of wider screens, where the game keeps its menus at the size a
+; 16:9 screen of that height gets. Screens narrower than 16:9 haven't been
+; seen live, so there buttons are looked for wherever the likely layouts put
+; them (see SetFrame).
 ;
 ; A match is grayscale normalised cross-correlation (TM_CCOEFF_NORMED) between
 ; lightly blurred pixels of the button image, scaled to the working height, and
 ; of the screen: first on half-size copies of both, then at full working size
-; around the best few places. 1.0 is a perfect match; 0.85 counts as found.
+; around the best few places. 1.0 is a perfect match; 0.85 counts as found
+; (less for a few buttons, see THRESHOLDS). Every image of a button is tried,
+; the one cut nearest this screen's height first.
 
 class Vision {
     static WORK_TARGET := 720
     static MENU_ASPECT := 16 / 9
     static THRESHOLD := 0.85
+    ; Lower thresholds, as the Python version had, for buttons whose text the
+    ; game draws a little differently at each screen height, so an image cut
+    ; at another height scores less on it. Their closest lookalikes score
+    ; under 0.75.
+    static THRESHOLDS := Map("server_row", 0.84, "browser_join", 0.84, "create_unit", 0.80)
     static COARSE_KEEP := 3       ; coarse candidates refined at full working size
     static COARSE_FLOOR := 0.55   ; coarse scores below this aren't refined (real buttons score 0.75+)
     static REFINE_REACH := 2      ; working pixels either way around a coarse candidate
@@ -82,6 +93,12 @@ class Vision {
     ; The force cards on Select Force are drawn a little wider or narrower on some screens.
     static SCALES := Map("force_us", [1.0, 1.05, 0.95], "force_nva", [1.0, 1.05, 0.95])
 
+    ; Text drawn at a screen height no image of it was cut at comes out a few
+    ; percent wider or narrower than the nearest image scaled to that height.
+    ; When no image finds these buttons at their usual size, they're tried
+    ; again at these sizes.
+    static LAST_RESORT := Map("server_row", [0.97, 1.03], "create_unit", [0.97, 1.03])
+
     ; crops: Map of name -> Array of {img: VisionGray, cut: screen height, tag: word in the file name}
     __New(crops) {
         this.crops := crops
@@ -97,13 +114,52 @@ class Vision {
         this.W := fullW, this.H := fullH, this.f := f
         this.left := left, this.top := top
         this.workH := fullH / f
-        this.menuW := Min(fullW, fullH * Vision.MENU_ASPECT)
-        this.menuLeft := (fullW - this.menuW) / 2
+        this.layouts := Vision.MenuLayouts(fullW, fullH)
         this.ready := true
     }
 
-    ; Whole shrink factor for a capture this tall.
-    static Factor(height) => Max(1, RoundHalfEven(height / Vision.WORK_TARGET))
+    ; Where the game draws its 16:9 menus on a ``w`` x ``h`` screen, in screen
+    ; pixels: [{left, top, w, h, padX, padY}], the likeliest first. A button at
+    ; (x, y) of the menus is drawn within padX of left + x * w across and padY
+    ; of top + y * h down, at the size the menus' height h gives it.
+    static MenuLayouts(w, h) {
+        wide := h * Vision.MENU_ASPECT
+        ; 16:9 or wider: the full height, in a 16:9 area in the middle.
+        if w >= wide
+            return [{left: (w - wide) / 2, top: 0, w: wide, h: h, padX: 0, padY: 0}]
+        ; Narrower: either sized by the height as on wider screens, with the
+        ; sides cut off or each side's buttons kept at their own edge of the
+        ; screen (so up to padX from where a centred 16:9 area would have them),
+        layouts := [{left: (w - wide) / 2, top: 0, w: wide, h: h, padX: (wide - w) / 2, padY: 0}]
+        ; or fitted to the width, with room above and below (16:10, 4:3).
+        tall := w / Vision.MENU_ASPECT
+        if tall < 0.98 * h
+            layouts.Push({left: 0, top: (h - tall) / 2, w: w, h: tall, padX: 0, padY: (h - tall) / 2})
+        return layouts
+    }
+
+    ; How much a capture this tall is shrunk: by a whole factor, except from
+    ; 721 to 1079 pixels high, which are shrunk to exactly 720 high (a factor
+    ; between 1 and 1.5). Left at full size there, the game's text differs
+    ; too much from the button images, and matching is slow.
+    static Factor(height) {
+        if height > Vision.WORK_TARGET && height < 1.5 * Vision.WORK_TARGET
+            return height / Vision.WORK_TARGET
+        return Max(1, RoundHalfEven(height / Vision.WORK_TARGET))
+    }
+
+    ; The working copy of a ``w`` x ``h`` capture: [width, height, factor].
+    ; With a whole factor f, it covers the capture's top left
+    ; (width * f) x (height * f) pixels; otherwise the whole capture.
+    static WorkSize(w, h) {
+        f := Vision.Factor(h)
+        if f is Integer
+            return [Max(1, w // f), Max(1, h // f), f]
+        return [Max(1, Round(w * Vision.WORK_TARGET / h)), Vision.WORK_TARGET, f]
+    }
+
+    ; The score that counts as finding ``name``.
+    static ThresholdFor(name) => Vision.THRESHOLDS.Has(name) ? Vision.THRESHOLDS[name] : Vision.THRESHOLD
 
     ; Centre of the best match of ``name`` as [x, y] on screen, or "" if it isn't showing.
     ; ``region`` is [left, top, right, bottom] in fractions of the menu area.
@@ -123,8 +179,9 @@ class Vision {
     ; The best score of ``name`` anywhere it's looked for, found or not (for tests and logs).
     BestScore(name, region := "") {
         best := -1.0
-        for hit in this.SpotHits(name, this.SpotsPx(name, region), 2.0, true)
-            best := Max(best, hit[1])
+        for layout in this.layouts
+            for hit in this.SpotHits(name, this.SpotsPx(name, region, layout), 2.0, true, layout.h / this.H)
+                best := Max(best, hit[1])
         return best
     }
 
@@ -137,31 +194,46 @@ class Vision {
         ; The server list only shows on the browser, which always has REFRESH.
         if name = "server_row" && !this.Hits("browser_refresh").Length
             return []
-        hits := this.SpotHits(name, this.SpotsPx(name, region), Vision.THRESHOLD)
-        ; best first; equal scores keep their order
-        loop hits.Length - 1 {
-            i := A_Index + 1, hit := hits[i], j := i - 1
-            while j >= 1 && hits[j][1] < hit[1] {
-                hits[j + 1] := hits[j], j--
-            }
-            hits[j + 1] := hit
+        threshold := Vision.ThresholdFor(name)
+        for layout in this.layouts {
+            found := this.SpotHits(name, this.SpotsPx(name, region, layout), threshold, false, layout.h / this.H)
+            if found.Length
+                break
         }
-        return hits
+        ; best first, equal scores keeping their order; a hit next to a better
+        ; one is the same button seen from another spot
+        hits := []
+        for hit in found {
+            j := hits.Length
+            while j >= 1 && hits[j][1] < hit[1]
+                j--
+            hits.InsertAt(j + 1, hit)
+        }
+        out := []
+        for hit in hits {
+            for kept in out
+                if Abs(hit[2] - kept[2]) <= 2 && Abs(hit[3] - kept[3]) <= 2
+                    continue 2
+            out.Push(hit)
+        }
+        return out
     }
 
-    ; The spots to look at, in working pixels: [x, y, reach x, reach y, crop].
-    SpotsPx(name, region := "") {
+    ; The spots to look at in ``layout`` (one of this.layouts; the first if
+    ; unset), in working pixels: [x, y, reach x, reach y, crop].
+    SpotsPx(name, region := "", layout := "") {
+        L := layout ? layout : this.layouts[1]
         out := []
         f := this.f
         if name = "admin_yes" {
-            y0 := Vision.ADMIN_TOP * this.H / f, y1 := Vision.ADMIN_BOTTOM * this.H / f
-            rx := Ceil(Vision.ADMIN_REACH_X * this.menuW / f)
-            xs := [this.W - Vision.ADMIN_FROM_RIGHT * this.menuW,
-                this.menuLeft + this.menuW - Vision.ADMIN_FROM_RIGHT * this.menuW]
+            y0 := L.top + Vision.ADMIN_TOP * L.h, y1 := L.top + Vision.ADMIN_BOTTOM * L.h
+            rx := Ceil(Vision.ADMIN_REACH_X * L.w / f)
+            ; against the screen's right edge, or the menus'
+            xs := [this.W - Vision.ADMIN_FROM_RIGHT * L.w, L.left + L.w - Vision.ADMIN_FROM_RIGHT * L.w]
             for x in xs {
                 if A_Index > 1 && Abs(x - xs[1]) < 2 * rx * f
                     continue
-                out.Push([x / f, (y0 + y1) / 2, rx, Ceil((y1 - y0) / 2)])
+                out.Push([x / f, (y0 + y1) / 2 / f, rx, Ceil(((y1 - y0) / 2 + L.padY) / f)])
             }
             return out
         }
@@ -172,8 +244,8 @@ class Vision {
                 if !(region[1] <= spot[1] && spot[1] <= region[3] && region[2] <= spot[2] && spot[2] <= region[4])
                     continue
             }
-            px := [(this.menuLeft + spot[1] * this.menuW) / f, spot[2] * this.H / f,
-                Ceil(spot[3] * this.menuW / f), Ceil(spot[4] * this.H / f)]
+            px := [(L.left + spot[1] * L.w) / f, (L.top + spot[2] * L.h) / f,
+                Ceil((spot[3] * L.w + L.padX) / f), Ceil((spot[4] * L.h + L.padY) / f)]
             if spot.Length >= 5
                 px.Push(spot[5])
             out.Push(px)
@@ -181,62 +253,76 @@ class Vision {
         return out
     }
 
-    ; Which images of ``name`` to try at this screen height: ones cut at this
-    ; height first, then the 1440p ones; with none cut at this height, the 1440p
-    ; ones, or every one if there are none of those either.
+    ; Which images of ``name`` to try, best bet first: the ones cut at this
+    ; screen height, then the others by how far the height they were cut at is
+    ; from it, as a ratio. With ``tag``, only images with that word in their
+    ; name.
     CropIndexes(name, tag?) {
-        idx := []
-        for crop in this.crops[name]
-            if !IsSet(tag) || crop.tag == tag
-                idx.Push(A_Index)
-        native := [], at1440 := []
-        for i in idx {
-            cut := this.crops[name][i].cut
-            if cut = this.H
-                native.Push(i)
-            else if cut = 1440
-                at1440.Push(i)
+        idx := [], gaps := []
+        for crop in this.crops[name] {
+            if IsSet(tag) && !(crop.tag == tag)
+                continue
+            gap := Abs(Ln(crop.cut / this.H))
+            j := idx.Length
+            while j >= 1 && gaps[j] > gap  ; nearest first; equal gaps keep their order
+                j--
+            idx.InsertAt(j + 1, A_Index), gaps.InsertAt(j + 1, gap)
         }
-        if native.Length {
-            for i in at1440
-                native.Push(i)
-            return native
-        }
-        return at1440.Length ? at1440 : idx
+        return idx
     }
 
-    ; ``keepAll`` also returns spots where nothing reached the threshold.
-    SpotHits(name, spots, threshold, keepAll := false) {
+    ; The best match around each spot, as [score, x, y] in working pixels, for
+    ; the spots where it reaches ``threshold`` (``keepAll``: every spot where
+    ; an image fits). Images are sized for the working height times ``size``.
+    ; Buttons in LAST_RESORT are tried at those sizes too when no spot reaches
+    ; it at the usual ones.
+    SpotHits(name, spots, threshold, keepAll := false, size := 1.0) {
         hits := []
         if !this.crops.Has(name)
             return hits
-        scales := Vision.SCALES.Has(name) ? Vision.SCALES[name] : [1.0]
+        bests := [], found := false
         for spot in spots {
-            best := ""
-            indexes := spot.Length >= 5 ? this.CropIndexes(name, spot[5]) : this.CropIndexes(name)
-            for i in indexes {
-                for scale in scales {
-                    pair := this.NeedlePair(name, i, scale)
-                    nd := pair[1], cn := pair[2]
-                    x0 := RoundHalfEven(spot[1] - nd.w / 2) - spot[3]
-                    y0 := RoundHalfEven(spot[2] - nd.h / 2) - spot[4]
-                    x1 := x0 + nd.w + 2 * spot[3], y1 := y0 + nd.h + 2 * spot[4]
-                    x0 := Max(0, x0), y0 := Max(0, y0), x1 := Min(this.fw, x1), y1 := Min(this.fh, y1)
-                    if x1 - x0 < nd.w || y1 - y0 < nd.h
-                        continue
-                    res := Vision.BestIn(this.Window(x0, y0, x1, y1), nd, cn)
-                    if !best || res[1] > best[1]
-                        best := [res[1], x0 + res[2] + nd.w / 2, y0 + res[3] + nd.h / 2]
-                    if best[1] >= threshold
-                        break
-                }
-                if best && best[1] >= threshold
-                    break
+            best := this.BestAt(name, spot, Vision.SCALES.Has(name) ? Vision.SCALES[name] : [1.0], threshold, size)
+            bests.Push(best)
+            found := found || best && best[1] >= threshold
+        }
+        if !found && Vision.LAST_RESORT.Has(name) {
+            for spot in spots {
+                again := this.BestAt(name, spot, Vision.LAST_RESORT[name], threshold, size)
+                if again && (!bests[A_Index] || again[1] > bests[A_Index][1])
+                    bests[A_Index] := again
             }
+        }
+        for best in bests
             if best && (keepAll || best[1] >= threshold)
                 hits.Push(best)
-        }
         return hits
+    }
+
+    ; The best match of any image of ``name``, at any of ``scales`` (times
+    ; ``size``), around ``spot``, as [score, x, y] in working pixels, or "" if
+    ; no image fits there. Stops at the first that reaches ``threshold``.
+    BestAt(name, spot, scales, threshold, size := 1.0) {
+        best := ""
+        indexes := spot.Length >= 5 ? this.CropIndexes(name, spot[5]) : this.CropIndexes(name)
+        for i in indexes {
+            for scale in scales {
+                pair := this.NeedlePair(name, i, size = 1 ? scale : scale * size)
+                nd := pair[1], cn := pair[2]
+                x0 := RoundHalfEven(spot[1] - nd.w / 2) - spot[3]
+                y0 := RoundHalfEven(spot[2] - nd.h / 2) - spot[4]
+                x1 := x0 + nd.w + 2 * spot[3], y1 := y0 + nd.h + 2 * spot[4]
+                x0 := Max(0, x0), y0 := Max(0, y0), x1 := Min(this.fw, x1), y1 := Min(this.fh, y1)
+                if x1 - x0 < nd.w || y1 - y0 < nd.h
+                    continue
+                res := Vision.BestIn(this.Window(x0, y0, x1, y1), nd, cn)
+                if !best || res[1] > best[1]
+                    best := [res[1], x0 + res[2] + nd.w / 2, y0 + res[3] + nd.h / 2]
+                if best[1] >= threshold
+                    return best
+            }
+        }
+        return best
     }
 
     ; [full, coarse] needles for image ``i`` of ``name`` at the working height

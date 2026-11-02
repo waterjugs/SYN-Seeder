@@ -77,7 +77,7 @@ RunSeed(config, passOn, installTo := "", oldPids := "") {
     try {
         if installTo != ""
             Updater.Install(installTo, oldPids ? oldPids : [])
-        else if Updater.UpdateAndHandOver(config, passOn)
+        else if Updater.UpdateAndHandOver(config, passOn, , () => stopping)
             return 0
     } catch as err {  ; an update going wrong mustn't stop today's seeding
         Logs.Exception("Updating failed; carrying on with this version", err)
@@ -108,13 +108,16 @@ RunSeed(config, passOn, installTo := "", oldPids := "") {
 ; The button images: downloaded from GitHub into %LOCALAPPDATA% by a built exe
 ; (checked against ButtonFiles.SHA256), or the repository's templates folder
 ; when run as a script. A player's own images in %APPDATA%\SynSeeder\templates
-; replace the ones of the same button.
+; replace the ones of the same button. While GitHub is answering, a built exe
+; also gets any of the window's fonts it lacks, for the window's next open.
 LoadButtons() {
     if A_IsCompiled {
         folder := Buttons.Folder
         missing := Buttons.Fetch(folder, ButtonFiles.SHA256, Build.COMMIT != "" ? Build.COMMIT : "main")
         if missing.Length
             Logs.Warning("Couldn't get these button images: " JoinList(missing))
+        else
+            try Look.GetFonts(30)
         crops := Buttons.Load(folder, ButtonFiles.SHA256)
     } else {
         crops := Buttons.Load(A_ScriptDir "\templates")
@@ -139,9 +142,14 @@ RunRecord(minutes, every) {
     finish := A_TickCount + minutes * 60000
     n := 0
     while A_TickCount < finish {
-        n++
-        screen.Refresh()  ; follows the monitor and warns about black captures
-        screen.SaveScreenshot(out "\" Format("{:04d}", n) ".png")
+        if screen.Refresh() {  ; follows the monitor and warns about black or failed captures
+            try {
+                screen.SaveScreenshot(out "\" Format("{:04d}", n + 1) ".png")
+                n++
+            } catch as err {
+                Logs.Warning("Couldn't save a screenshot: " err.Message)
+            }
+        }
         Sleep(Round(every * 1000))
     }
     Logs.Info("Saved " n " screenshots to " out)

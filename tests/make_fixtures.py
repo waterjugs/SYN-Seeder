@@ -4,14 +4,17 @@
     python tests/make_fixtures.py build/fixtures
 
 Each case is a screenshot from tests/screens, resized or padded to a screen
-size the way a player would see it, then shrunk by the whole factor the app
-uses (f = round(height / 720), averaging f x f blocks), and saved as an 8-bit
-gray PNG. cases.json says what the app should see on each one.
+size the way a player would see it (or might, on a screen narrower than
+16:9), then shrunk to the app's working copy (by
+the whole factor round(height / 720), averaging f x f blocks, or to exactly
+720 high for screens from 721 to 1079 high), and saved as an 8-bit gray PNG.
+cases.json says what the app should see on each one.
 """
 
 from __future__ import annotations
 
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -74,9 +77,33 @@ EXPECTED_NATIVE = {
     "5120x2160/search": "server_row",
 }
 
+# The native captures again at sizes no button image was cut at, where the app
+# tries the image cut nearest the screen's height first. Trimmed by a row at
+# the bottom, the game's own pixels go through that path (the menus move by
+# under a pixel); resized, the text is the source's, shrunk or grown, which
+# flatters the image cut at the source's height.
+TRIMMED = [f"1080p/{shot}" for shot in EXPECTED_1080P] + list(EXPECTED_NATIVE)
+RESIZED_NATIVE = {
+    "1080p/search": [(1600, 900), (1366, 768)],
+    "1080p/create_unit": [(1600, 900), (1366, 768)],
+    "1080p/units": [(1600, 900)],
+    "1080p/select_force": [(1366, 768)],
+    "2560x1080/create_unit": [(2276, 960)],
+    "3440x1440/search": [(2867, 1200)],
+    "3840x2160/create_unit": [(3200, 1800)],
+    "3840x2160/units": [(3200, 1800)],
+    "5120x2160/search": [(4267, 1800)],
+}
+
 # Parts of the screens, as fractions of the 16:9 menu area (as in src/Flow.ahk).
 INFANTRY_CREATE = [0.29, 0.10, 0.53, 0.22]
 FACTION_BADGE = [0.0, 0.75, 0.12, 0.95]
+# Screens narrower than 16:9 (16:10, 4:3), which no one has seeded on yet, with
+# the game's 16:9 menus fitted to them each way narrow() makes. Cases where
+# that way would put the button off the screen are left out.
+NARROW_SHOTS = ["menu", "search", "select_force", "units", "create_unit", "roles_msg", "deploy", "gamemenu"]
+NARROW = [("letter", (1920, 1200)), ("dpiw", (1600, 1200)), ("edge", (1920, 1200)), ("center", (1920, 1200))]
+OFF_SCREEN = {("edge", "select_force"), ("center", "menu"), ("center", "gamemenu")}
 US_CARD = [0.05, 0.30, 0.50, 0.55]
 NVA_CARD = [0.50, 0.30, 0.95, 0.55]
 CREATE_UNIT_BUTTON = [0.55, 0.60, 0.95, 0.90]
@@ -105,15 +132,46 @@ def load_wide(name: str, res: str) -> np.ndarray:
     return widen(gray, w)
 
 
-def factor(height: int) -> int:
+def narrow(name: str, kind: str, size: tuple[int, int]) -> np.ndarray:
+    """``name`` on a ``size`` screen narrower than 16:9, the game's menus
+    fitted to it ``kind`` of way: "letter", scaled to the width and centred
+    with black above and below; "dpiw", scaled to the width with the top half
+    kept at the top and the bottom half at the bottom; "edge", scaled to the
+    height with the left half kept at the left edge and the right half at the
+    right; "center", scaled to the height and cut off at both sides."""
+    w, h = size
+    if kind in ("letter", "dpiw"):
+        menus = round(w * 9 / 16)
+        gray = load(name, (w, menus))
+        gap = h - menus
+        if kind == "letter":
+            return cv2.copyMakeBorder(gray, gap // 2, gap - gap // 2, 0, 0, cv2.BORDER_CONSTANT, value=0)
+        half = menus // 2
+        return np.vstack([gray[:half], gray[half - gap // 2: half - gap // 2 + gap], gray[half:]]).copy()
+    wide = round(h * 16 / 9)
+    gray = load(name, (wide, h))
+    if kind == "edge":
+        return np.hstack([gray[:, : w // 2], gray[:, wide - (w - w // 2):]]).copy()
+    left = (wide - w) // 2
+    return gray[:, left: left + w].copy()
+
+
+def factor(height: int) -> float:
+    """How much the app shrinks a capture this tall (Vision.Factor)."""
+    if 720 < height < 1080:
+        return height / 720
     return max(1, round(height / 720))
 
 
-def shrink(gray: np.ndarray, f: int) -> np.ndarray:
-    """Averages each f x f block, rounding half up, as the app's GameScreen.Shrink does."""
+def shrink(gray: np.ndarray, f: float) -> np.ndarray:
+    """The app's working copy (Vision.WorkSize, GameScreen.Shrink): each f x f
+    block averaged, rounding half up, for a whole factor; otherwise each pixel
+    the average of the pixels it covers, at exactly 720 high."""
     if f == 1:
         return gray
     h, w = gray.shape
+    if not isinstance(f, int):
+        return cv2.resize(gray, (max(1, math.floor(w * 720 / h + 0.5)), 720), interpolation=cv2.INTER_AREA)
     blocks = gray[: h // f * f, : w // f * f].astype(np.int64).reshape(h // f, f, w // f, f).sum(axis=(1, 3))
     return ((blocks + f * f // 2) // (f * f)).astype(np.uint8)
 
@@ -145,6 +203,12 @@ def checks_for(shot: str, size: tuple[int, int], kind: str) -> list[dict]:
         reach = 0.02 * (w if kind == "native" else min(w, h * 16 / 9))
         out.append({"find": "create_unit_button", "region": CREATE_UNIT_BUTTON,
                     "x": near(menu_x(0.765, size), reach), "y": near(0.741 * h, 0.02 * h)})
+    if kind == "resized_native":
+        if shot == "search":
+            out.append({"join_on_row": True, "x": near(menu_x(1726 / 2560, size), 0.01 * w), "row_dy": 0.01 * h})
+        if shot == "units":
+            out.append({"find": "switch_team"})
+        return out
     if shot == "search":
         if kind == "resized":
             out.append({"join_on_row": True, "x": near(1726 * w / 2560, 10 * w / 1920),
@@ -158,7 +222,7 @@ def checks_for(shot: str, size: tuple[int, int], kind: str) -> list[dict]:
         elif kind == "native":
             out.append({"join_on_row": True, "x": near(menu_x(1726 / 2560, size), 0.01 * w),
                         "row_dy": 0.01 * h})
-            if size == (5120, 2160):
+            if w == 5120 and h in (2159, 2160):  # also trimmed
                 out.append({"only_cut": 2160, "name": "server_row"})
     if shot == "create_unit" and kind == "native1080":
         out.append({"only_cut": 1080, "name": "create_unit"})
@@ -166,7 +230,7 @@ def checks_for(shot: str, size: tuple[int, int], kind: str) -> list[dict]:
         out.append({"find": "infantry_create", "region": INFANTRY_CREATE, "x": near(menu_x(0.411, size), 0.02 * w)})
         out.append({"find": "switch_team"})
         out.append({"find": "faction_nva", "region": FACTION_BADGE, "missing": True})  # these runs picked US
-        if size == (3840, 2160):
+        if w == 3840 and h in (2159, 2160):  # also trimmed
             out.append({"only_cut": 2160, "name": "switch_team"})
     if shot == "browser" and size == (1920, 1080) and kind == "resized":
         out.append({"count": "browser_join", "min": 8})
@@ -188,7 +252,27 @@ def cases() -> list[tuple[str, np.ndarray, object, list[dict]]]:
         gray = load_file(path)
         size = (gray.shape[1], gray.shape[0])
         out.append((path, gray, screen, checks_for(path.split("/")[1], size, "native")))
+    for path in TRIMMED:
+        gray = load_file(path)[:-1]
+        size = (gray.shape[1], gray.shape[0])
+        out.append((f"{path}@{size[0]}x{size[1]}", gray, native_screen(path),
+                    checks_for(path.split("/")[1], size, "native1080" if path.startswith("1080p/") else "native")))
+    for path, sizes in RESIZED_NATIVE.items():
+        source = load_file(path)
+        for size in sizes:
+            gray = cv2.resize(source, size, interpolation=cv2.INTER_AREA if size[0] < source.shape[1] else cv2.INTER_CUBIC)
+            out.append((f"{path}@{size[0]}x{size[1]}", gray, native_screen(path),
+                        checks_for(path.split("/")[1], size, "resized_native")))
+    for kind, size in NARROW:
+        for shot in NARROW_SHOTS:
+            if (kind, shot) not in OFF_SCREEN:
+                out.append((f"{kind}/{shot}@{size[0]}x{size[1]}", narrow(shot, kind, size), EXPECTED[shot], []))
     return out
+
+
+def native_screen(path: str) -> str | None:
+    """What the app should see on a native capture."""
+    return EXPECTED_1080P[path[len("1080p/"):]] if path.startswith("1080p/") else EXPECTED_NATIVE[path]
 
 
 def main(folder: str) -> None:

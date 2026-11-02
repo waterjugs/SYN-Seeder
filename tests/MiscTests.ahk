@@ -6,6 +6,10 @@ LIVE_STATS := '{"result": {"name": {"name": "Syndicate | Competitive Server | Di
 
 TaskField(xml, tag) => RegExMatch(xml, "<" tag ">([^<]*)</" tag ">", &m) ? m[1] : ""
 
+ThrowOffline(*) {
+    throw Error("offline")
+}
+
 class MiscTests {
     ; Settings
 
@@ -76,6 +80,16 @@ class MiscTests {
 
     static Test_fetch_is_empty_when_unreachable() {
         AssertEq(ServerStats.Fetch("http://127.0.0.1:9/nothing", 1), "")
+    }
+
+    ; WinHTTP hands back a new array for every read of ResponseBody, freed as
+    ; soon as nothing holds it; the text must be copied while it's held.
+    static Test_response_text_survives_the_array_being_freed() {
+        for n in [1200, 5000, 70000] {
+            want := '{"pad":"' StrReplace(Format("{:" n "}", ""), " ", "é") '","n":1}'
+            AssertEq(Http.BodyText(FakeResponse(want)), want, n " characters")
+        }
+        AssertEq(Http.BodyText(FakeResponse("")), "")
     }
 
     static Test_failed_response_is_an_error() {
@@ -194,8 +208,25 @@ class MiscTests {
         AssertEq(Json.Dump([]), "[]")
     }
 
+    ; Release notes can be long; a regular expression over the whole string
+    ; ran out of PCRE recursion at about 3,000 characters.
+    static Test_json_reads_long_strings() {
+        line := 'Fixed the \"Join\" button \u00e9\\ and more.\n'
+        body := ""
+        loop 800
+            body .= line
+        data := Json.Load('{"tag_name": "v1.2.0", "body": "' body '", "after": "x\\"}')
+        AssertEq(StrLen(data["body"]), 800 * 37)
+        AssertEq(SubStr(data["body"], 1, 37), 'Fixed the "Join" button é\ and more.`n')
+        AssertEq(data["after"], "x\")
+        plain := ""
+        loop 20000
+            plain .= "a"
+        AssertEq(StrLen(Json.Load('["' plain '"]')[1]), 20000)
+    }
+
     static Test_json_rejects_broken_text() {
-        for text in ["", "{", "[1,]", '{"a" 1}', "tru", '"open', "1 2"] {
+        for text in ["", "{", "[1,]", '{"a" 1}', "tru", '"open', "1 2", '"a\\"b"', '"bad \x"', '"\u12"', '"tab' "`t" '"', '"end\"'] {
             try {
                 Json.Load(text)
                 threw := false
@@ -244,6 +275,92 @@ class MiscTests {
 
     static Test_every_required_button_has_an_image() {
         AssertEq(Buttons.Missing(Buttons.Load(A_ScriptDir "\..\templates")), [])
+    }
+
+    ; A copy that doesn't match this version's checksum is never used, even
+    ; when a fresh one can't be downloaded.
+    static Test_button_images_that_fail_their_checksum_are_not_used() {
+        folder := App.Dir "\buttons"
+        DirCreate(folder)
+        loop files A_ScriptDir "\..\templates\*.png"
+            FileCopy(A_LoopFilePath, folder "\" A_LoopFileName)
+        FileCopy(A_ScriptDir "\..\templates\admin_yes.png", folder "\server_row.png", true)  ; the wrong picture
+        Patches.Set(Http, "Download", ThrowOffline)
+        missing := Buttons.Fetch(folder, ButtonFiles.SHA256, "main")
+        AssertEq(missing, ["server_row.png"])
+        Assert(!FileExist(folder "\server_row.png"), "the wrong copy is still there")
+        crops := Buttons.Load(folder, ButtonFiles.SHA256)
+        cuts := []
+        for crop in crops["server_row"]
+            cuts.Push(crop.cut)
+        AssertEq(cuts, [1080, 2160])  ; the plain 1440p one is gone; the others still load
+        ; and a copy changed after it was checked is skipped when loading
+        FileCopy(A_ScriptDir "\..\templates\admin_yes.png", folder "\create_unit.png", true)
+        AssertEq(Buttons.Load(folder, ButtonFiles.SHA256)["create_unit"].Length, 1)
+        AssertEq(Buttons.Load(folder, ButtonFiles.SHA256)["create_unit"][1].cut, 1080)
+    }
+
+    ; The window's fonts come down all at once, within a time limit in all: a
+    ; download only stays if its checksum matches, an old copy that doesn't
+    ; goes, and one that hasn't come by then is stopped.
+    static Test_files_fetched_at_once_are_checked_and_late_ones_stopped() {
+        folder := App.Dir "\fetch"
+        DirCreate(folder)
+        files := Map("a.ttf", Sha256.Text("font a"), "b.ttf", Sha256.Text("font b"), "c.ttf", Sha256.Text("font c"), "d.ttf", Sha256.Text("font d"))
+        FileAppend("font d", folder "\d.ttf", "UTF-8-RAW")  ; already here
+        FileAppend("old b", folder "\b.ttf", "UTF-8-RAW")   ; an old copy
+        answers := Map("a.ttf", FakeResponse("font a"), "b.ttf", FakeResponse("not b"), "c.ttf", FakeResponse("font c", false))
+        asked := []
+        start(this, url, accept, timeout, async) {
+            asked.Push([url, async])
+            return answers[RegExReplace(url, ".*/")]
+        }
+        Patches.Set(Http, "Start", start)
+        Logs.capture := []
+        t0 := A_TickCount
+        missing := RepoFiles.FetchAtOnce(folder, files, "abc123", "assets/fonts", "font", 0.4)
+        took := A_TickCount - t0
+        base := "https://raw.githubusercontent.com/" App.REPO "/abc123/assets/fonts/"
+        AssertEq(asked, [[base "a.ttf", true], [base "b.ttf", true], [base "c.ttf", true]])
+        AssertEq(missing, ["b.ttf", "c.ttf"])
+        AssertEq(FileRead(folder "\a.ttf"), "font a")
+        AssertEq(FileRead(folder "\d.ttf"), "font d")
+        Assert(!FileExist(folder "\b.ttf"), "the old b is still there")
+        Assert(!FileExist(folder "\c.ttf"), "c is there")
+        Assert(answers["c.ttf"].aborted, "the late download wasn't stopped")
+        Assert(took >= 400 && took < 3000, "took " took " ms")
+        Assert(!FileExist(folder "\*.part"), "a .part file was left")
+        AssertEq(Logs.capture.Length, 2)
+        Assert(InStr(Logs.capture[1], "b.ttf: the download isn't the right file"), Logs.capture[1])
+        Assert(InStr(Logs.capture[2], "c.ttf: no answer in 0.4 seconds"), Logs.capture[2])
+    }
+
+    ; The window tries GitHub for fonts it lacks only every few hours once a
+    ; try has failed; a seeding run always tries, and a try that works clears it.
+    static Test_window_leaves_github_alone_for_a_while_after_fonts_fail() {
+        folder := App.Dir "\fonts", note := folder "\download-failed.txt"
+        Patches.Value(Look, "FontFolder", folder)
+        tries := [], result := ["Inter.ttf"]
+        Patches.Set(RepoFiles, "FetchAtOnce", (this, dir, files, ref, path, what, wait) => (DirCreate(dir), tries.Push(wait), result))
+        Look.GetFonts(Look.FONT_WAIT, true)  ; the window, offline
+        AssertEq(tries, [3])
+        Assert(FileExist(note), "no note of the failure")
+        Look.GetFonts(Look.FONT_WAIT, true)  ; opened again soon after
+        AssertEq(tries, [3], "the window tried again at once")
+        Look.GetFonts(30)  ; a seeding run
+        AssertEq(tries, [3, 30])
+        out := FileOpen(note, "w"), out.Write(DateAdd(A_NowUTC, -(Look.FONT_RETRY_HOURS + 1), "Hours")), out.Close()
+        Look.GetFonts(Look.FONT_WAIT, true)  ; hours later
+        AssertEq(tries, [3, 30, 3])
+        out := FileOpen(note, "w"), out.Write("not a time"), out.Close()
+        Look.GetFonts(Look.FONT_WAIT, true)
+        AssertEq(tries.Length, 4, "a broken note stopped it trying")
+        result := []  ; online again, and the daily run gets them
+        Look.GetFonts(30)
+        AssertEq(tries.Length, 5)
+        Assert(!FileExist(note), "the note is still there")
+        Look.GetFonts(Look.FONT_WAIT, true)
+        AssertEq(tries.Length, 6)
     }
 
     static Test_button_file_names() {

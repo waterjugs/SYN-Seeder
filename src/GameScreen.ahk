@@ -15,6 +15,8 @@ class GameScreen {
         this.rect := rect
         this.area := GameScreen.Primary()
         this.blackTicks := 0
+        this.captureFailed := false  ; the last capture failed, and the log said so
+        this.narrowWarned := false
         this.dib := ""   ; the working-size capture, kept between refreshes
         this.full := ""  ; the full-size capture it's shrunk from, likewise
     }
@@ -25,30 +27,46 @@ class GameScreen {
     static Primary() => {left: 0, top: 0, w: A_ScreenWidth, h: A_ScreenHeight}
 
     ; Takes a new screenshot; Find and FindAll use it until the next refresh.
+    ; False if the screen couldn't be read (the PC is locked, or a UAC prompt
+    ; is up); then Find and FindAll keep using the last one.
     Refresh() {
         rect := this.rect ? (this.rect)() : ""
         this.area := rect ? {left: rect[1], top: rect[2], w: rect[3], h: rect[4]} : GameScreen.Primary()
         area := this.area
-        f := Vision.Factor(area.h)
-        w := Max(1, area.w // f), h := Max(1, area.h // f)
+        if !this.narrowWarned && area.w < area.h * Vision.MENU_ASPECT - 2 {
+            this.narrowWarned := true
+            Logs.Warning("The game is " area.w "x" area.h ", narrower than the 16:9 and wider screens SynSeeder was "
+                . "tested on. If it can't find the game's buttons, set the game to Windowed at a 16:9 size, like 1920x1080.")
+        }
+        size := Vision.WorkSize(area.w, area.h)
+        w := size[1], h := size[2], f := size[3]
         frame := this._Grab(w, h, f)
+        if !frame {
+            if !this.captureFailed
+                Logs.Warning("Couldn't capture the screen (Windows error " A_LastError "); waiting. "
+                    . "This happens while the PC is locked or a Windows prompt is up.")
+            this.captureFailed := true
+            return false
+        }
+        this.captureFailed := false
         this.blackTicks := GameScreen.LooksBlack(frame.bits, w, h) ? this.blackTicks + 1 : 0
         if this.blackTicks = GameScreen.BLACK_WARNING_TICKS
             Logs.Warning("Screen captures are coming back black. Set the game's display mode to "
                 . "Borderless / Windowed Fullscreen.")
         this.vision.SetFrame(frame.bits, w, h, w * 4, area.w, area.h, f, area.left, area.top)
+        return true
     }
 
     ; Centre of ``name`` on screen as [x, y], or "" when it isn't showing.
     Find(name, region := "") {
-        if !this.vision.ready
-            this.Refresh()
+        if !this.vision.ready && !this.Refresh()
+            return ""
         return this.vision.Find(name, region)
     }
 
     FindAll(name, region := "") {
-        if !this.vision.ready
-            this.Refresh()
+        if !this.vision.ready && !this.Refresh()
+            return []
         return this.vision.FindAll(name, region)
     }
 
@@ -81,7 +99,8 @@ class GameScreen {
         area := this.area
         shot := GameScreen._MakeDib(area.w, area.h)
         try {
-            GameScreen._Copy(shot.dc, area.w, area.h, area)
+            if !GameScreen._Copy(shot.dc, area.w, area.h, area)
+                throw Error("Couldn't capture the screen (Windows error " A_LastError ")")
             Gdip.SavePng(shot.hbm, path)
         } finally {
             GameScreen._FreeDibOf(shot)
@@ -103,8 +122,9 @@ class GameScreen {
         return true
     }
 
-    ; The capture at working size: the game's area shrunk by f, each pixel the
-    ; average of an f x f block (see Shrink).
+    ; The capture at working size (Vision.WorkSize): the game's area shrunk by
+    ; f, each pixel the average of the screen pixels it covers (see Shrink).
+    ; "" if the screen couldn't be read.
     _Grab(w, h, f) {
         if !this.dib || this.dib.w != w || this.dib.h != h {
             if this.dib
@@ -112,49 +132,52 @@ class GameScreen {
             this.dib := ""
             this.dib := GameScreen._MakeDib(w, h)
         }
-        if f = 1 {
-            GameScreen._Copy(this.dib.dc, w, h, this.area)
-            return this.dib
-        }
-        if !this.full || this.full.w != w * f || this.full.h != h * f {
+        if f = 1
+            return GameScreen._Copy(this.dib.dc, w, h, this.area) ? this.dib : ""
+        ; whole f x f blocks for a whole factor, else the whole area
+        sw := f is Integer ? w * f : this.area.w, sh := f is Integer ? h * f : this.area.h
+        if !this.full || this.full.w != sw || this.full.h != sh {
             if this.full
                 GameScreen._FreeDibOf(this.full)
             this.full := ""
-            this.full := GameScreen._MakeDib(w * f, h * f)
+            this.full := GameScreen._MakeDib(sw, sh)
         }
-        GameScreen._Copy(this.full.dc, w * f, h * f, this.area)
-        GameScreen.Shrink(this.full, this.dib, f)
+        if !GameScreen._Copy(this.full.dc, sw, sh, this.area)
+            return ""
+        GameScreen.Shrink(this.full, this.dib)
         return this.dib
     }
 
-    ; Copies the screen at ``area`` into a memory DC, at full size.
+    ; Copies the screen at ``area`` into a memory DC, at full size. False if
+    ; it can't (A_LastError says why).
     static _Copy(dc, w, h, area) {
         screen := DllCall("GetDC", "Ptr", 0, "Ptr")
         if !screen
-            throw OSError("Couldn't read the screen")
+            return false
         rop := 0x00CC0020 | 0x40000000  ; SRCCOPY | CAPTUREBLT (include layered windows)
-        try {
-            ok := DllCall("gdi32\BitBlt", "Ptr", dc, "Int", 0, "Int", 0, "Int", w, "Int", h,
-                "Ptr", screen, "Int", area.left, "Int", area.top, "UInt", rop)
-        } finally {
-            DllCall("ReleaseDC", "Ptr", 0, "Ptr", screen)
+        ok := DllCall("gdi32\BitBlt", "Ptr", dc, "Int", 0, "Int", 0, "Int", w, "Int", h,
+            "Ptr", screen, "Int", area.left, "Int", area.top, "UInt", rop)
+        code := A_LastError
+        DllCall("ReleaseDC", "Ptr", 0, "Ptr", screen)
+        if !ok {
+            DllCall("SetLastError", "UInt", code)
+            return false
         }
-        if !ok
-            throw OSError("Couldn't capture the screen")
         DllCall("gdi32\GdiFlush")
+        return true
     }
 
     static shrinkWarned := false
 
-    ; Shrinks the bitmap ``src`` into ``dst``, which is ``f`` times smaller each
-    ; way, making each pixel the average of an f x f block, as the screenshot
-    ; cases the button finder is tested on are made. Windows Imaging
-    ; Component's Fant scaler does that. If it can't, GDI's HALFTONE stretch
-    ; does a rougher job (on Windows its pixels stray from the block averages
-    ; by up to about 60 levels). Returns which of the two did it.
-    static Shrink(src, dst, f) {
+    ; Shrinks the bitmap ``src`` into the smaller ``dst``, making each pixel the
+    ; average of the pixels it covers (an f x f block for a whole factor f), as
+    ; the screenshot cases the button finder is tested on are made. Windows
+    ; Imaging Component's Fant scaler does that. If it can't, GDI's HALFTONE
+    ; stretch does a rougher job (on Windows its pixels stray from the block
+    ; averages by up to about 60 levels). Returns which of the two did it.
+    static Shrink(src, dst) {
         try {
-            Wic.Shrink(src.bits, dst.w * f, dst.h * f, src.w * 4, dst.bits, dst.w, dst.h)
+            Wic.Shrink(src.bits, src.w, src.h, src.w * 4, dst.bits, dst.w, dst.h)
             return "Windows Imaging Component"
         } catch as err {
             if !GameScreen.shrinkWarned {
@@ -166,7 +189,7 @@ class GameScreen {
         DllCall("gdi32\SetStretchBltMode", "Ptr", dst.dc, "Int", 4)  ; HALFTONE
         DllCall("gdi32\SetBrushOrgEx", "Ptr", dst.dc, "Int", 0, "Int", 0, "Ptr", 0)
         DllCall("gdi32\StretchBlt", "Ptr", dst.dc, "Int", 0, "Int", 0, "Int", dst.w, "Int", dst.h,
-            "Ptr", src.dc, "Int", 0, "Int", 0, "Int", dst.w * f, "Int", dst.h * f, "UInt", 0x00CC0020)
+            "Ptr", src.dc, "Int", 0, "Int", 0, "Int", src.w, "Int", src.h, "UInt", 0x00CC0020)
         DllCall("gdi32\GdiFlush")
         return "GDI"
     }
