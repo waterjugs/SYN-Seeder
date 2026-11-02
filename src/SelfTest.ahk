@@ -1,6 +1,6 @@
 ; "SynSeeder.exe --selftest LOG" checks, on a real Windows PC without the
 ; game, the parts the other tests can't: Windows' own screen shrinking, the
-; daily task, the button image downloads, and that the exe starts at all.
+; daily task, the button image and font downloads, and that the exe starts.
 ; CI runs it on every build. Lines are PASS or FAIL checks, or notes.
 
 class SelfTest {
@@ -22,7 +22,7 @@ class SelfTest {
             ["settings", () => SelfTest.Settings(check)],
             ["task XML", () => SelfTest.TaskXml(check)],
             ["daily task", () => SelfTest.Task(check)],
-            ["shrinking", () => SelfTest.Shrinking(check)],
+            ["shrinking", () => SelfTest.Shrinking(check, note)],
             ["button images", () => SelfTest.ButtonImages(check, note)],
             ["fonts", () => SelfTest.Fonts(check)],
             ["screen", () => SelfTest.Screen(note)],
@@ -71,17 +71,31 @@ class SelfTest {
         check("daily task registers and deletes", found && !DailyTask.Exists(name))
     }
 
-    ; The matcher expects each working pixel to be the rounded average of an
-    ; f x f block of screen pixels, which StretchBlt's HALFTONE mode should give.
-    static Shrinking(check) {
+    ; The button finder expects each working pixel to be the rounded average of
+    ; an f x f block of screen pixels, as its screenshot cases are made
+    ; (GameScreen.Shrink).
+    static Shrinking(check, note) {
         for f in [2, 3, 4] {
             result := SelfTest.ShrinkError(96, 60, f)
             check("screen shrink by " f " averages blocks", result.max <= 2,
-                "largest difference " result.max ", average " Round(result.mean, 3))
+                "largest difference " result.max ", average " Round(result.mean, 3) ", by " result.how)
+        }
+        ; How long a big screen takes: 5120x2160 shrinks by 3.
+        src := GameScreen._MakeDib(5120, 2160)
+        dst := GameScreen._MakeDib(5120 // 3, 2160 // 3)
+        try {
+            DllCall("QueryPerformanceFrequency", "Int64*", &freq := 0)
+            DllCall("QueryPerformanceCounter", "Int64*", &t0 := 0)
+            how := GameScreen.Shrink(src, dst, 3)
+            DllCall("QueryPerformanceCounter", "Int64*", &t1 := 0)
+            note("shrinking 5120x2160", Round((t1 - t0) * 1000 / freq) " ms, by " how)
+        } finally {
+            GameScreen._FreeDibOf(src)
+            GameScreen._FreeDibOf(dst)
         }
     }
 
-    ; How far StretchBlt HALFTONE strays from block averages on a w x h test pattern.
+    ; How far the app's shrink strays from block averages on a w x h test pattern.
     static ShrinkError(w, h, f) {
         src := GameScreen._MakeDib(w, h)
         dst := GameScreen._MakeDib(w // f, h // f)
@@ -94,11 +108,7 @@ class SelfTest {
                 pixel := (y // 12) & 1 ? (seed >> 8) & 0xFFFFFF : base
                 NumPut("UInt", pixel, src.bits, i * 4)
             }
-            DllCall("gdi32\SetStretchBltMode", "Ptr", dst.dc, "Int", 4)
-            DllCall("gdi32\SetBrushOrgEx", "Ptr", dst.dc, "Int", 0, "Int", 0, "Ptr", 0)
-            DllCall("gdi32\StretchBlt", "Ptr", dst.dc, "Int", 0, "Int", 0, "Int", w // f, "Int", h // f,
-                "Ptr", src.dc, "Int", 0, "Int", 0, "Int", (w // f) * f, "Int", (h // f) * f, "UInt", 0x00CC0020)
-            DllCall("gdi32\GdiFlush")
+            how := GameScreen.Shrink(src, dst, f)
             worst := 0, total := 0, count := 0
             loop h // f {
                 by := A_Index - 1
@@ -118,7 +128,7 @@ class SelfTest {
                     }
                 }
             }
-            return {max: worst, mean: total / count}
+            return {max: worst, mean: total / count, how: how}
         } finally {
             GameScreen._FreeDibOf(src)
             GameScreen._FreeDibOf(dst)
