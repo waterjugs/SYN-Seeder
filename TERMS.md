@@ -1,6 +1,6 @@
 # SynSeeder Terms of Service
 
-Last updated: 1 November 2026
+Last updated: 2 November 2026
 
 SynSeeder is a free, unofficial tool that plays Hell Let Loose: Vietnam for you so a community server fills up. By running it, you agree to these terms. The short version:
 
@@ -39,7 +39,7 @@ We give you a free, personal, non-exclusive, non-transferable licence to downloa
 
 SynSeeder's source code is public on GitHub so anyone can see what it does. It has no open-source licence, so we keep all rights in it. GitHub's own terms let anyone view the code and fork it on GitHub. Beyond that, don't sell SynSeeder, pass it off as your own, or share changed copies of the app. If we add an open-source licence later, that licence decides what you can do with the code. To share SynSeeder, link to the official [GitHub releases](https://github.com/waterjugs/SYN-Seeder/releases) rather than passing the exe around, so people get the current, unchanged version.
 
-SynSeeder includes third-party software that stays under its own licence, including Python, Tcl/Tk, OpenCV, FFmpeg, NumPy, OpenBLAS, psutil, mss, the PyInstaller bootloader and the Inter font. Nothing in these terms limits your rights under those licences.
+SynSeeder includes third-party software that stays under its own licence: SynSeeder.exe is built on AutoHotkey (GNU General Public License version 2), and its window uses the Inter and Barlow Condensed fonts (SIL Open Font License 1.1). The [third-party notices](THIRD-PARTY-NOTICES.md) list them. Nothing in these terms limits your rights under those licences.
 
 ## 4. Game, Steam and Epic rules, and the risk to your account
 
@@ -69,7 +69,7 @@ Server admins can kick or ban the seeder like any other player. If a server's ad
 
 SynSeeder is an independent, unofficial tool. It isn't made, endorsed, sponsored or supported by Expression Games or Team17 (the developer and publisher of Hell Let Loose: Vietnam), Valve (Steam), Epic Games (the Epic Games Store and Easy Anti-Cheat), or the makers of CRCON, the admin tool behind the server's stats page. It also isn't an official tool of the Syndicate | Competitive Server, and the server's owners aren't responsible for it.
 
-Hell Let Loose, Steam, Epic Games and the other names here are trademarks of their owners, used only to say what SynSeeder works with. The small pictures of the game's buttons inside SynSeeder belong to the game's makers and are included only so the app can recognise those buttons.
+Hell Let Loose, Steam, Epic Games and the other names here are trademarks of their owners, used only to say what SynSeeder works with. The small pictures of the game's buttons that SynSeeder downloads from its GitHub page belong to the game's makers and are used only so the app can recognise those buttons.
 
 ## 7. No warranty, and limits on liability
 
@@ -89,7 +89,7 @@ Some places don't allow these exclusions or limits. There, they apply only as fa
 
 **Stopping.** You can stop using SynSeeder at any time: untick **Seed automatically**, press **Save**, then delete the app and its folders (the Privacy Policy lists them). We can end your permission to use it if you break these terms. Sections 5, 6 and 7 still apply after that.
 
-**Privacy.** The [SynSeeder Privacy Policy](PRIVACY.md) explains what the app stores and sends. In short, what the app saves stays on your PC. On its own, it only asks the server's stats page for the player count, and checks GitHub for updates and downloads them. Playing on the server shares your player name and ID with the server and its admins, just as when you play yourself.
+**Privacy.** The [SynSeeder Privacy Policy](PRIVACY.md) explains what the app stores and sends. In short, what the app saves stays on your PC. On its own, it only asks the server's stats page for the player count, downloads the pictures of the game's buttons and its window's fonts from GitHub, and checks GitHub for updates and downloads them. Playing on the server shares your player name and ID with the server and its admins, just as when you play yourself.
 
 **The rest.** If a court finds part of these terms unenforceable, the rest still applies. If we don't enforce a term straight away, we can still enforce it later. These terms are the whole agreement between you and us about SynSeeder. They're governed by the laws of the United States of America, leaving aside any rule that would apply another place's law. If you live somewhere whose laws give you rights that an agreement can't take away, you keep those rights.
 

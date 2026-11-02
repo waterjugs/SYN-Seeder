@@ -6,7 +6,8 @@ The folder needs the screenshots named below (Steam's F12 saves them under
 Steam/userdata/<id>/760/remote/3079210/screenshots), plus 1920x1080 ones in
 a 1080p subfolder for the text templates' 1080p crops. After a game patch,
 retake the affected screen, adjust its box here if the layout moved, rerun,
-then run the tests.
+then put the new images' SHA-256 in src/ButtonFiles.ahk (tests/run_tests.ahk
+says which ones changed) and run tests/vision_cases.ahk.
 """
 
 import sys

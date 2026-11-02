@@ -2,8 +2,8 @@
 ;
 ; Everything is drawn while the window runs, with GDI and GDI+ (Windows' own
 ; drawing libraries), so no image files are built into SynSeeder.exe. The
-; shapes and colours are the ones tools/make_assets.py drew for the first
-; (Python) SynSeeder's window.
+; shapes and colours are the ones the first (Python) SynSeeder drew into image
+; files for its window.
 
 class Look {
     ; Night sky warming to dusk, carried down through the window, with amber for first light.
