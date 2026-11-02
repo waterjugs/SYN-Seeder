@@ -101,9 +101,9 @@ class Json {
         text := StrReplace(text, "`b", "\b")
         text := StrReplace(text, "`f", "\f")
         out := ""
-        loop parse text {
+        loop parse text {  ; control characters, and surrogates so a broken pair still reads back
             code := Ord(A_LoopField)
-            out .= code < 0x20 ? Format("\u{:04x}", code) : A_LoopField
+            out .= code < 0x20 || (code >= 0xD800 && code <= 0xDFFF) ? Format("\u{:04x}", code) : A_LoopField
         }
         return '"' out '"'
     }
