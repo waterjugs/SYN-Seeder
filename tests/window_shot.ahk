@@ -1,7 +1,7 @@
 ; Opens the setup window, puts it in a given state and saves a picture of
 ; it, to check the look (CI keeps the pictures). Nothing is saved or scheduled.
 ;
-;   AutoHotkey64.exe tests\window_shot.ahk OUT.png [players] [hover control]
+;   AutoHotkey64.exe tests\window_shot.ahk OUT.png [players, or none] [grid]
 #Requires AutoHotkey v2.0
 #SingleInstance Off
 #Warn All, StdOut

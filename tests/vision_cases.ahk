@@ -8,7 +8,10 @@
 #NoTrayIcon
 #Warn All, StdOut
 #Warn LocalSameAsGlobal, Off
+#Include ..\src\Build.ahk
+#Include ..\src\App.ahk
 #Include ..\src\Json.ahk
+#Include ..\src\Http.ahk
 #Include ..\src\Gdip.ahk
 #Include ..\src\Vision.ahk
 #Include ..\src\Buttons.ahk
