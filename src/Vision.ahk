@@ -7,8 +7,8 @@
 ; (roles_confirm.title.png) is a crop of a different part of the same screen.
 ;
 ; Each capture is shrunk once by a whole factor f = round(height / 720), which
-; averages every f x f block of pixels (StretchBlt's HALFTONE mode), giving a
-; working copy about 720 pixels high. A button is only looked for around the
+; averages every f x f block of pixels (GameScreen.Shrink), giving a working
+; copy about 720 pixels high. A button is only looked for around the
 ; spots where the game draws it. Spots are fractions of the game's menu area:
 ; the whole screen at 16:9, and a 16:9 area in the middle of wider screens,
 ; where the game keeps its menus at the size a 16:9 screen of that height gets.

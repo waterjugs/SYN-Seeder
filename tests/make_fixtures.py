@@ -110,7 +110,7 @@ def factor(height: int) -> int:
 
 
 def shrink(gray: np.ndarray, f: int) -> np.ndarray:
-    """Averages each f x f block, rounding half up, as StretchBlt's HALFTONE mode does."""
+    """Averages each f x f block, rounding half up, as the app's GameScreen.Shrink does."""
     if f == 1:
         return gray
     h, w = gray.shape
