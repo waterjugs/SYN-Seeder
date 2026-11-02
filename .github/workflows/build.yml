@@ -87,7 +87,9 @@ jobs:
 
       - name: Run the tests
         shell: pwsh
-        run: ./tools/run_ahk.ps1 -Program ahk\AutoHotkey64.exe -Arguments /ErrorStdOut, tests\run_tests.ahk -Seconds 900
+        run: |
+          ./tools/run_ahk.ps1 -Program ahk\AutoHotkey64.exe -Arguments /ErrorStdOut, tests\run_tests.ahk -Seconds 900 `
+            -Expect '^\d+ passed, 0 failed$'
 
       - uses: actions/setup-python@v5
         with:
@@ -99,7 +101,8 @@ jobs:
           python -m pip install --disable-pip-version-check --quiet opencv-python-headless==5.0.0.93 numpy==2.5.3
           python tests/make_fixtures.py build/fixtures
           if ($LASTEXITCODE -ne 0) { exit 1 }
-          ./tools/run_ahk.ps1 -Program ahk\AutoHotkey64.exe -Arguments /ErrorStdOut, tests\vision_cases.ahk, build\fixtures -Seconds 900
+          ./tools/run_ahk.ps1 -Program ahk\AutoHotkey64.exe -Arguments /ErrorStdOut, tests\vision_cases.ahk, build\fixtures -Seconds 900 `
+            -Expect '^(\d+) of \1 cases passed;'
 
       - name: Build SynSeeder.exe
         shell: pwsh

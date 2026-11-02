@@ -167,6 +167,63 @@ class GameTests {
         AssertEq(Logs.capture.Length, 2)  ; a new run of failures is logged again
     }
 
+    ; The screen asks the button finder for the JOIN on the row it's given, not
+    ; for the best JOIN anywhere, which can be another server's.
+    static Test_the_screen_looks_for_join_only_on_the_rows_height() {
+        screen := GameScreen(Map())
+        finder := screen.vision
+        finder.ready := true
+        asked := []
+        finder.DefineProp("JoinOnRow", {Call: (this, row) => (asked.Push(row), row[2] = 606 ? [1290, 610] : "")})
+        finder.DefineProp("Find", {Call: (this, name, region := "") => name = "browser_join" ? [1290, 300] : ""})
+        AssertEq(screen.JoinOnRow([700, 606]), [1290, 610])
+        AssertEq(screen.JoinOnRow([700, 527]), "")
+        AssertEq(asked, [[700, 606], [700, 527]])
+    }
+
+    ; A 1280x720 capture, black but for a noisy gray patch around create_unit's
+    ; spot with a 64x20 button image in it; and that image. More ``noise``
+    ; (+- levels per pixel) makes the image match less well.
+    static ButtonFrame(noise) {
+        img := VisionGray(64, 20)
+        loop 20 {
+            y := A_Index - 1
+            loop 64 {
+                x := A_Index - 1
+                NumPut("UChar", 60 + 120 * ((x // 8 + y // 5) & 1) + x, img.buf, y * 64 + x)
+            }
+        }
+        w := 1280, h := 720, frame := Buffer(w * h * 4, 0)
+        cx := Round(0.2917 * w), cy := Round(0.3056 * h), left := cx - 32, top := cy - 10
+        seed := 12345
+        loop 80 {
+            y := cy - 40 + A_Index - 1
+            loop 160 {
+                x := cx - 80 + A_Index - 1
+                v := 30
+                if x >= left && x < left + 64 && y >= top && y < top + 20
+                    v := NumGet(img.buf, (y - top) * 64 + x - left, "UChar")
+                seed := Mod(seed * 1103515245 + 12345, 0x80000000)
+                v := Max(0, Min(255, v + Round(((seed >> 16) & 0x7FFF) / 0x7FFF * 2 * noise - noise)))
+                NumPut("UInt", v | v << 8 | v << 16, frame, (y * w + x) * 4)
+            }
+        }
+        finder := Vision(Map("create_unit", [{img: img, cut: 720, tag: ""}]))
+        finder.SetFrame(frame.Ptr, w, h, w * 4, w, h, 1)
+        return {finder: finder, frame: frame, x: cx, y: cy}
+    }
+
+    ; A button in Vision.THRESHOLDS counts as found at its own, lower score:
+    ; here a create_unit that scores between its 0.80 and the usual 0.85.
+    static Test_buttons_with_their_own_threshold_are_found_below_the_usual_one() {
+        t := GameTests.ButtonFrame(139)
+        score := t.finder.BestScore("create_unit")
+        Assert(score >= 0.80 && score < Vision.THRESHOLD, "the test image scores " score)
+        AssertEq(t.finder.Find("create_unit"), [t.x, t.y])
+        Patches.Value(Vision, "THRESHOLDS", Map())
+        AssertEq(t.finder.Find("create_unit"), "")
+    }
+
     static Test_flow_skips_a_tick_without_a_screen() {
         screen := FakeScreen(HappyPath())
         screen.Show("menu_enlist")
@@ -206,6 +263,34 @@ class GameTests {
         game.DefineProp("Pid", {Call: (*) => 0})
         AssertThrows(SeedStopped, () => game.Launch(300))
         AssertEq(late.at, HllGame.LATE_START_SECONDS)
+    }
+
+    static Test_a_stop_late_in_the_launch_still_watches_the_whole_time() {
+        Patches.Set(HllGame, "Start", (*) => "")
+        ended := []
+        Patches.Set(HllGame, "_End", (this, pid) => ended.Push(pid))
+        late := FakeClock()
+        game := HllGame(SeederConfig(), StoppingClock(290), late)  ; 10 s before the launch would give up
+        game.DefineProp("Window", {Call: (*) => 0})
+        game.DefineProp("Pid", {Call: (*) => late.at >= 40 ? 4321 : 0})  ; shows up 40 s after the stop
+        AssertThrows(SeedStopped, () => game.Launch(300))
+        AssertEq(ended, [4321])
+    }
+
+    ; The key the game's keyboard layout types a letter with is pressed; on a
+    ; Russian or Greek layout no key types f, so F's own key is.
+    static Test_letters_reach_the_game_on_a_layout_that_cant_type_them() {
+        asked := []
+        scancode(answer) {
+            Patches.Set(WinApi, "VkScan", (this, key, layout) => (asked.Push(key), answer))
+            return WinApi._Scancode("f")
+        }
+        us := scancode(0x46)     ; the F key types f, as on a US layout
+        other := scancode(0x47)  ; the G key does
+        none := scancode(-1)     ; no key does
+        AssertEq(asked, ["f", "f", "f"], "_Scancode didn't ask the game's layout")
+        Assert(us && other && other != us, "the F and G keys' scancodes: " us ", " other)
+        AssertEq(none, us)
     }
 
     static Test_idle_counts_from_the_last_input() {

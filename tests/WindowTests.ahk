@@ -219,6 +219,27 @@ class WindowTests {
         WindowTests.With(check)
     }
 
+    ; Seed now runs Critical: a Stop seeding click that comes in meanwhile
+    ; waits until the run has started, so it can stop it.
+    static Test_seed_now_holds_other_clicks_until_the_run_has_started() {
+        order := []
+        check(w, calls) {
+            click() => order.Push("click")
+            start(*) {
+                SetTimer(click, -1)  ; e.g. Stop seeding, clicked meanwhile
+                Sleep(50)
+                order.Push(A_IsCritical ? "started, critical" : "started")
+                return 4242
+            }
+            Patches.Set(SetupWindow.Prototype, "StartRun", start)
+            w.SeedNow()
+            order.Push("returned")
+            Sleep(50)
+            AssertEq(order, ["started, critical", "returned", "click"])
+        }
+        WindowTests.With(check)
+    }
+
     static Test_seed_now_starts_unless_the_count_says_seeded() {
         for item in [79, ""] {  ; below 80, or the stats site unreachable
             amount := item  ; nested functions can't see a for loop's variables
@@ -433,6 +454,74 @@ class WindowTests {
         WindowTests.With(check)
     }
 
+    ; A run that starts during the watch (the schedule, Seed now in another
+    ; window) owns the game, so the watch ends and leaves the game alone.
+    static Test_the_late_game_watch_leaves_a_new_runs_game_alone() {
+        log := []
+        check(w, calls) {
+            WindowTests.FakeRuns([[7]], log, false)
+            Patches.Set(HllGame.Prototype, "Pid", (*) => 8080)
+            Logs.capture := []
+            w.StopSeeding()
+            Assert(w.lateWatch, "not watching for a late game")
+            Patches.Set(SeedLock, "Running", (*) => true)
+            w.lateWatch.Call()
+            AssertEq(calls, ["close game"])
+            AssertEq(w.lateWatch, "")
+        }
+        WindowTests.With(check)
+    }
+
+    ; Seed now ends the watch only once it has started a run, whose game it then is.
+    static Test_seed_now_keeps_watching_for_a_late_game_unless_it_starts_a_run() {
+        check(w, calls) {
+            w.WatchLateGame(60)
+            w.ShowServer(84)  ; seeded: nothing to start
+            w.SeedNow()
+            Assert(w.lateWatch, "stopped watching, though no run started")
+            w.ShowServer(20)
+            Patches.Set(SetupWindow.Prototype, "StartRun", (*) => WindowTests.Raise("no such file"))
+            w.SeedNow()
+            Assert(w.lateWatch, "stopped watching, though the run couldn't start")
+            Patches.Set(SetupWindow.Prototype, "StartRun", (*) => 4242)
+            w.SeedNow()
+            AssertEq(w.lateWatch, "")
+        }
+        WindowTests.With(check)
+    }
+
+    ; Closing the window during the watch hides it, and SynSeeder exits once
+    ; the watch is over.
+    static Test_closing_the_window_keeps_watching_for_a_late_game() {
+        log := [], pid := 0, exits := 0
+        check(w, calls) {
+            w.DefineProp("Exit", {Call: (*) => exits++})
+            WindowTests.FakeRuns([[7]], log, false)
+            Patches.Set(HllGame.Prototype, "Pid", (*) => pid)
+            Logs.capture := []
+            w.StopSeeding()
+            Assert(w.lateWatch, "not watching for a late game")
+            w.Close()
+            AssertEq(exits, 0, "exited while it should still be watching")
+            Assert(w.lateWatch, "closing the window stopped the watch")
+            pid := 8080
+            w.lateWatch.Call()
+            AssertEq(calls, ["close game", "end game 8080"])
+            AssertEq(exits, 1)
+        }
+        WindowTests.With(check)
+    }
+
+    static Test_closing_the_window_exits() {
+        exits := 0
+        check(w, calls) {
+            w.DefineProp("Exit", {Call: (*) => exits++})
+            w.Close()
+            AssertEq(exits, 1)
+        }
+        WindowTests.With(check)
+    }
+
     static Test_a_run_that_stops_by_itself_needs_no_watch() {
         log := []
         check(w, calls) {
@@ -625,6 +714,31 @@ class WindowTests {
             w.statusLine.GetPos(, , , &lineH3)
             terms.GetPos(, &termsY3)
             AssertEq([lineH3, termsY3, w.height], [lineH, termsY, height])
+        }
+        WindowTests.With(check)
+    }
+
+    ; Windows doesn't size a minimized window the way it restores it, so a
+    ; status that changes then is fitted once the window is restored.
+    static Test_status_change_while_minimized_fits_the_restored_window() {
+        check(w, calls) {
+            inner() {
+                rect := Buffer(16, 0)
+                DllCall("GetClientRect", "Ptr", w.gui.Hwnd, "Ptr", rect)
+                return NumGet(rect, 12, "Int")
+            }
+            long := "Couldn't set up the schedule:"
+            loop 4
+                long .= " Windows said something long about why it couldn't, number " A_Index "."
+            w.Show()
+            w.Status(long, Look.FLARE)
+            AssertEq(inner(), w.height, "the window didn't grow")
+            WinMinimize(w.gui)
+            Sleep(100)
+            w.Status("The run has ended.")
+            WinRestore(w.gui)
+            Sleep(100)
+            AssertEq(inner(), w.height, "the restored window isn't its new height")
         }
         WindowTests.With(check)
     }

@@ -79,7 +79,7 @@ class Look {
     ; GetFonts); a script uses the repository's assets\fonts. Windows' own
     ; fonts stand in for any that can't be had.
     static LoadFonts() {
-        if A_IsCompiled {
+        if App.Built {
             folder := Look.FontFolder
             try
                 Look.GetFonts(Look.FONT_WAIT, true)
@@ -91,7 +91,7 @@ class Look {
         loaded := 0
         for fileName, sha in FontFiles.SHA256 {
             path := folder "\" fileName
-            if FileExist(path) && (!A_IsCompiled || Sha256.File(path) = sha)
+            if FileExist(path) && (!App.Built || Sha256.File(path) = sha)
                 loaded += DllCall("gdi32\AddFontResourceExW", "Str", path, "UInt", 0x10, "Ptr", 0) > 0  ; FR_PRIVATE
         }
         return loaded

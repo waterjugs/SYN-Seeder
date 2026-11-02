@@ -111,7 +111,7 @@ RunSeed(config, passOn, installTo := "", oldPids := "") {
 ; replace the ones of the same button. While GitHub is answering, a built exe
 ; also gets any of the window's fonts it lacks, for the window's next open.
 LoadButtons() {
-    if A_IsCompiled {
+    if App.Built {
         folder := Buttons.Folder
         missing := Buttons.Fetch(folder, ButtonFiles.SHA256, Build.COMMIT != "" ? Build.COMMIT : "main")
         if missing.Length

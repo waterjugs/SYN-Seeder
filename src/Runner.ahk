@@ -157,7 +157,10 @@ class Runner {
             ; Steam can start the game minutes late (e.g. after an update), so
             ; if it isn't up at the end, keep watching for it a little longer.
             lateStart := outcome == Runner.GAVE_UP || (outcome == Runner.TIMED_OUT && attempts && !game.Running())
-            game.Close(lateStart ? 90 : 0)
+            if outcome == "" && game.launchPending  ; stopped soon after a launch timed out
+                game.CloseLateStart(HllGame.LATE_START_SECONDS)
+            else
+                game.Close(lateStart ? 90 : 0)
         }
     }
 

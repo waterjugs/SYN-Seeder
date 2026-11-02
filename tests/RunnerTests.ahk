@@ -131,6 +131,26 @@ class RunnerTests {
         AssertEq(Only(r.screen.keys, "f"), ["f", "f"])
     }
 
+    ; On the server list the JOIN clicked is on the server's own row, even
+    ; when another server's JOIN looks more like the button.
+    static Test_joins_with_the_join_button_on_the_servers_own_row() {
+        screen := FakeScreen(Map())
+        screen.DefineProp("Find", {Call: (this, name, region := "") => name == "server_row" ? [700, 606]
+            : name == "browser_join" ? [1290, 300] : ""})  ; another server's JOIN matches best
+        rows := []
+        screen.DefineProp("JoinOnRow", {Call: (this, row) => (rows.Push(row), row[2] = 606 ? [1290, 610] : "")})
+        clicked := []
+        screen.DefineProp("Click", {Call: (this, pos) => clicked.Push(pos)})
+        nav := Navigator(screen, SeederConfig(), FakeClock(), () => "")
+        nav.Handle("server_row")
+        AssertEq(rows, [[700, 606]])
+        AssertEq(clicked, [[1290, 610]])
+        ; No JOIN found on its row yet: nothing is clicked, rather than another server's.
+        screen.DefineProp("JoinOnRow", {Call: (this, row) => ""})
+        nav.Handle("server_row")
+        AssertEq(clicked, [[1290, 610]])
+    }
+
     static Test_never_joins_someone_elses_squad() {
         screen := FakeScreen(Map())
         screen.Show("switch_team")
@@ -318,6 +338,23 @@ class RunnerTests {
         AssertEq(r.game.closes, 1)  ; only when leaving
     }
 
+    ; A screen that can't be read in game for longer than it takes to get in
+    ; (a locked PC) isn't a menu: nothing to walk back through, no relaunch.
+    static Test_a_screen_that_cant_be_read_in_game_for_long_is_waited_out() {
+        r := MakeRun()
+        failing := false
+        r.screen.DefineProp("Refresh", {Call: (*) => !failing})
+        each(n) {
+            failing := n >= 3 && n < 43  ; 20 minutes in game without a capture
+        }
+        fetch := Counted(n => FakeStatus(n >= 43 ? 80 : 10, 5, 5, "S"), each)
+        Logs.capture := []
+        AssertEq(SeedWith(r.config, r.game, r.screen, fetch, r.clock), Runner.SEEDED)
+        AssertEq([r.game.launches, r.game.closes], [1, 1])
+        for line in Logs.capture
+            Assert(!InStr(line, "getting back in"), line)
+    }
+
     static Test_rejoins_after_kick_to_menu() {
         r := MakeRun()
         screen := r.screen
@@ -498,6 +535,24 @@ class RunnerTests {
         r := MakeRun(false, false)
         SeedWith(r.config, r.game, r.screen, Statuses([10]), r.clock)
         AssertEq(r.game.lingered, 90)
+    }
+
+    ; A stop in the pause after a launch timed out (Steam updating) still
+    ; closes a game the launcher starts late, as a stop during the launch does.
+    static Test_a_stop_just_after_a_launch_timed_out_still_watches_for_the_game() {
+        Patches.Set(HllGame, "Start", (*) => "")
+        Patches.Set(HllGame, "WindowedProcesses", (*) => [])
+        ended := []
+        Patches.Set(HllGame, "_End", (this, pid) => ended.Push(pid))
+        config := SeederConfig()
+        clock := StoppingClock(config.launch_timeout + 1)  ; the launch gives up at launch_timeout
+        late := FakeClock()
+        game := HllGame(config, clock, late)
+        game.DefineProp("Window", {Call: (*) => 0})
+        game.DefineProp("Pid", {Call: (*) => late.at >= 40 ? 4321 : 0})  ; shows up 40 s after the stop
+        game.DefineProp("Unlocked", {Call: (*) => true})
+        AssertThrows(SeedStopped, () => SeedWith(config, game, FakeScreen(HappyPath()), Statuses([10]), clock))
+        AssertEq(ended, [4321])
     }
 
     static Test_stop_closes_the_game() {

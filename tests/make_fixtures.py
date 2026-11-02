@@ -93,6 +93,10 @@ RESIZED_NATIVE = {
     "3840x2160/units": [(3200, 1800)],
     "5120x2160/search": [(4267, 1800)],
 }
+# The native 1080p CREATE UNIT capture stretched a few percent wider, as text
+# comes out when the game draws it at a height no button image was cut at:
+# only the last-resort sizes (Vision.LAST_RESORT) find it. [path, stretch, height]
+STRETCHED = [("1080p/create_unit", 1.03, 1080), ("1080p/create_unit", 1.04, 1440)]
 
 # Parts of the screens, as fractions of the 16:9 menu area (as in src/Flow.ahk).
 INFANTRY_CREATE = [0.29, 0.10, 0.53, 0.22]
@@ -103,14 +107,51 @@ FACTION_BADGE = [0.0, 0.75, 0.12, 0.95]
 NARROW_SHOTS = ["menu", "search", "select_force", "units", "create_unit", "roles_msg", "deploy", "gamemenu"]
 NARROW = [("letter", (1920, 1200)), ("dpiw", (1600, 1200)), ("edge", (1920, 1200)), ("center", (1920, 1200))]
 OFF_SCREEN = {("edge", "select_force"), ("center", "menu"), ("center", "gamemenu")}
+# The server browser with the server's row (its name, players and ping from
+# search.jpg) pasted into row k of an unfiltered list of nine (browser.jpg).
+# Every row keeps the list's own JOIN, as in the game, so only the JOIN on the
+# server's row is the one to click: on narrow screens and a 16:9 control. On
+# 4:3 a JOIN's spot reaches the rows around it, so there the JOIN found
+# nearest the server's name can be another server's.
+ROW_TOP, ROW_STEP, ROW_HEIGHT, ROW_LEFT = 198, 79, 77, 55  # at 1920x1080
+JOIN_CELL = (1232, 1360)  # the JOIN button's cell across, at 1920x1080
+FIRST_JOIN_Y = 234  # the first row's JOIN, at 1920x1080
+# [kind, size, row, options]. "blank" paints out the JOIN on the server's row,
+# so nothing must be clicked; "at" puts the game's top left corner at that
+# screen position (another monitor, or a window).
+LIST_ROWS = (
+    [("16x9", (1920, 1080), 4, {}), ("16x9", (1920, 1080), 4, {"blank": True}),
+     ("16x9", (1920, 1080), 4, {"at": (-1920, 240)})]
+    + [(kind, size, k, {}) for kind, size in NARROW if kind != "edge" for k in (0, 8)]
+    + [(kind, (1600, 1200), k, {}) for kind in ("letter", "dpiw") for k in (1, 7)]
+    + [("letter", (1600, 1200), 1, {"blank": True}), ("letter", (1600, 1200), 7, {"at": (2560, -300)})])
 US_CARD = [0.05, 0.30, 0.50, 0.55]
 NVA_CARD = [0.50, 0.30, 0.95, 0.55]
 CREATE_UNIT_BUTTON = [0.55, 0.60, 0.95, 0.90]
 
 
 def load(name: str, size: tuple[int, int]) -> np.ndarray:
-    gray = cv2.imread(str(SCREENS / f"{name}.jpg"), cv2.IMREAD_GRAYSCALE)
+    return fit(cv2.imread(str(SCREENS / f"{name}.jpg"), cv2.IMREAD_GRAYSCALE), size)
+
+
+def fit(gray: np.ndarray, size: tuple[int, int]) -> np.ndarray:
+    if (gray.shape[1], gray.shape[0]) == size:
+        return gray.copy()
     return cv2.resize(gray, size, interpolation=cv2.INTER_AREA if size[0] < gray.shape[1] else cv2.INTER_CUBIC)
+
+
+def server_list(k: int, blank: bool = False) -> np.ndarray:
+    """The 1920x1080 server browser listing nine servers, the server's own in
+    row ``k`` (up to its JOIN cell); with ``blank``, that row's JOIN painted
+    out with the cell's own gray."""
+    page = load_file("browser")
+    rows = load_file("search")
+    top, right = ROW_TOP + ROW_STEP * k, JOIN_CELL[0] - 6
+    page[top: top + ROW_HEIGHT, ROW_LEFT:right] = rows[ROW_TOP: ROW_TOP + ROW_HEIGHT, ROW_LEFT:right]
+    if blank:
+        y = FIRST_JOIN_Y + ROW_STEP * k
+        page[y - 34: y + 35, JOIN_CELL[0]:JOIN_CELL[1]] = int(np.median(page[y - 20: y + 20, 1242:1262]))
+    return page
 
 
 def load_file(path: str) -> np.ndarray:
@@ -131,28 +172,45 @@ def load_wide(name: str, res: str) -> np.ndarray:
     return widen(gray, w)
 
 
-def narrow(name: str, kind: str, size: tuple[int, int]) -> np.ndarray:
-    """``name`` on a ``size`` screen narrower than 16:9, the game's menus
-    fitted to it ``kind`` of way: "letter", scaled to the width and centred
-    with black above and below; "dpiw", scaled to the width with the top half
-    kept at the top and the bottom half at the bottom; "edge", scaled to the
-    height with the left half kept at the left edge and the right half at the
-    right; "center", scaled to the height and cut off at both sides."""
+def narrow(source: np.ndarray, kind: str, size: tuple[int, int]) -> np.ndarray:
+    """The 16:9 screenshot ``source`` on a ``size`` screen narrower than
+    16:9, the game's menus fitted to it ``kind`` of way: "letter", scaled to
+    the width and centred with black above and below; "dpiw", scaled to the
+    width with the top half kept at the top and the bottom half at the
+    bottom; "edge", scaled to the height with the left half kept at the left
+    edge and the right half at the right; "center", scaled to the height and
+    cut off at both sides."""
     w, h = size
     if kind in ("letter", "dpiw"):
         menus = round(w * 9 / 16)
-        gray = load(name, (w, menus))
+        gray = fit(source, (w, menus))
         gap = h - menus
         if kind == "letter":
             return cv2.copyMakeBorder(gray, gap // 2, gap - gap // 2, 0, 0, cv2.BORDER_CONSTANT, value=0)
         half = menus // 2
         return np.vstack([gray[:half], gray[half - gap // 2: half - gap // 2 + gap], gray[half:]]).copy()
     wide = round(h * 16 / 9)
-    gray = load(name, (wide, h))
+    gray = fit(source, (wide, h))
     if kind == "edge":
         return np.hstack([gray[:, : w // 2], gray[:, wide - (w - w // 2):]]).copy()
     left = (wide - w) // 2
     return gray[:, left: left + w].copy()
+
+
+def list_join_y(kind: str, size: tuple[int, int], k: int) -> tuple[float, float]:
+    """Where row ``k``'s JOIN is drawn down a ``size`` screen fitted ``kind``
+    of way (see narrow), and the rows' pitch there, in pixels."""
+    w, h = size
+    if kind in ("letter", "dpiw"):
+        menus = round(w * 9 / 16)
+        gap = h - menus
+        y = (FIRST_JOIN_Y + ROW_STEP * k) * menus / 1080
+        if kind == "letter":
+            y += gap // 2
+        elif y >= menus // 2:
+            y += gap
+        return y, ROW_STEP * menus / 1080
+    return (FIRST_JOIN_Y + ROW_STEP * k) * h / 1080, ROW_STEP * h / 1080
 
 
 def factor(height: int) -> int:
@@ -199,6 +257,8 @@ def checks_for(shot: str, size: tuple[int, int], kind: str) -> list[dict]:
         out.append({"find": "create_unit_button", "region": CREATE_UNIT_BUTTON,
                     "x": near(menu_x(0.765, size), reach), "y": near(0.741 * h, 0.02 * h)})
     if kind == "resized_native":
+        if shot == "create_unit" and size in ((1600, 900), (1366, 768)):
+            out.append({"only_cut": 1440, "name": "create_unit"})  # needs the last-resort sizes
         if shot == "search":
             out.append({"join_on_row": True, "x": near(menu_x(1726 / 2560, size), 0.01 * w), "row_dy": 0.01 * h})
         if shot == "units":
@@ -234,7 +294,10 @@ def checks_for(shot: str, size: tuple[int, int], kind: str) -> list[dict]:
     return out
 
 
-def cases() -> list[tuple[str, np.ndarray, object, list[dict]]]:
+def cases() -> list[tuple]:
+    """[label, screenshot, screen the app should see, checks] for each case,
+    and for some a dict of more case fields ("left", "top": where the
+    screenshot is on screen)."""
     out = []
     for shot, screen in EXPECTED.items():
         for res, size in RESOLUTIONS.items():
@@ -258,10 +321,34 @@ def cases() -> list[tuple[str, np.ndarray, object, list[dict]]]:
             gray = cv2.resize(source, size, interpolation=cv2.INTER_AREA if size[0] < source.shape[1] else cv2.INTER_CUBIC)
             out.append((f"{path}@{size[0]}x{size[1]}", gray, native_screen(path),
                         checks_for(path.split("/")[1], size, "resized_native")))
+    for path, stretch, height in STRETCHED:
+        source = load_file(path)
+        size = (round(height * 16 / 9 * stretch), height)
+        out.append((f"stretched/{path.split('/')[1]}@{size[0]}x{size[1]}", fit(source, size), native_screen(path), []))
     for kind, size in NARROW:
         for shot in NARROW_SHOTS:
             if (kind, shot) not in OFF_SCREEN:
-                out.append((f"{kind}/{shot}@{size[0]}x{size[1]}", narrow(shot, kind, size), EXPECTED[shot], []))
+                out.append((f"{kind}/{shot}@{size[0]}x{size[1]}", narrow(load_file(shot), kind, size),
+                            EXPECTED[shot], []))
+    for kind, size, k, options in LIST_ROWS:
+        page = server_list(k, options.get("blank", False))
+        gray = page if size == (1920, 1080) else narrow(page, kind, size)
+        y, pitch = list_join_y(kind, size, k)
+        w, h = size
+        if options.get("blank"):
+            checks = [{"join_on_row": True, "none": True}]
+        else:
+            checks = [{"join_on_row": True, "y": near(y, pitch / 2)}]
+            # Where each JOIN's spot reaches over its neighbours (dpiw, 4:3),
+            # FindAll sees only some of them.
+            if kind != "dpiw" and w * 10 >= h * 16:
+                checks.append({"count": "browser_join", "min": 8})
+        label = f"{kind}/browser_row{k}" + ("_blank" if options.get("blank") else "")
+        at = {}
+        if "at" in options:
+            at = {"left": options["at"][0], "top": options["at"][1]}
+            label += f"_at{at['left']},{at['top']}"
+        out.append((f"{label}@{w}x{h}", gray, "server_row", checks, at))
     return out
 
 
@@ -274,13 +361,13 @@ def main(folder: str) -> None:
     root = Path(folder)
     (root / "frames").mkdir(parents=True, exist_ok=True)
     listing = []
-    for n, (label, gray, screen, checks) in enumerate(cases(), 1):
+    for n, (label, gray, screen, checks, *more) in enumerate(cases(), 1):
         h, w = gray.shape
         f = factor(h)
         file = f"frames/{n:03d}.png"
         cv2.imwrite(str(root / file), shrink(gray, f), [cv2.IMWRITE_PNG_COMPRESSION, 1])
         listing.append({"label": label, "file": file, "width": w, "height": h, "factor": f,
-                        "screen": screen, "checks": checks})
+                        "screen": screen, "checks": checks, **(more[0] if more else {})})
     (root / "cases.json").write_text(json.dumps(listing, indent=1), encoding="utf-8")
     print(f"{len(listing)} cases in {root}")
 

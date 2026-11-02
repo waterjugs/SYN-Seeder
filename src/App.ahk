@@ -10,6 +10,9 @@ class App {
 
     static dirOverride := ""  ; tests point App.Dir somewhere else
 
+    ; True in a built SynSeeder.exe, false in the script (tests pretend either way).
+    static Built => A_IsCompiled
+
     ; %APPDATA%\SynSeeder: settings, the log, debug screenshots and players' own button images.
     static Dir {
         get {
@@ -158,11 +161,17 @@ StartPath(path) => path = "" || RegExMatch(path, "^([A-Za-z]:|\\)") ? path : A_I
 
 ; Puts the finished file ``temp`` in place of ``target``: writes it to disk
 ; first, then swaps it in with one rename, so a power cut leaves the old file
-; or the new one, never half of one. Throws OSError if either step fails.
+; or the new one, never half of one. Throws OSError if either step fails, or
+; if ``temp`` isn't there; ``target`` is then left as it was.
 ReplaceFile(temp, target) {
-    file := FileOpen(temp, "rw")  ; FlushFileBuffers needs write access; "rw" keeps the contents
-    flushed := DllCall("FlushFileBuffers", "Ptr", file.Handle), code := A_LastError
-    file.Close()
+    ; Write access, which FlushFileBuffers needs, to the file as it is: OPEN_EXISTING
+    ; never makes an empty one (FileOpen's "rw" would).
+    handle := DllCall("CreateFileW", "Str", temp, "UInt", 0x40000000, "UInt", 0x7, "Ptr", 0, "UInt", 3,
+        "UInt", 0, "Ptr", 0, "Ptr")  ; GENERIC_WRITE, sharing read, write and delete, OPEN_EXISTING
+    if handle = -1
+        throw OSError()
+    flushed := DllCall("FlushFileBuffers", "Ptr", handle), code := A_LastError
+    DllCall("CloseHandle", "Ptr", handle)
     if !flushed
         throw OSError(code)
     if !DllCall("MoveFileExW", "Str", temp, "Str", target, "UInt", 0x1 | 0x8)  ; REPLACE_EXISTING | WRITE_THROUGH

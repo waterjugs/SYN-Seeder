@@ -41,8 +41,9 @@ ReleasePayload(tag := "v1.2.0", changes := "") {
     return Json.Load(Json.Dump(payload))  ; as it comes back from GitHub
 }
 
-; A release build of v1.0.0 installed in App.Dir\bin; records what the updater does.
-InstalledRelease() {
+; A release build of v1.0.0 installed in App.Dir\bin; records what the updater
+; does. The hand-over is a stand-in unless ``realHandOver``.
+InstalledRelease(realHandOver := false) {
     folder := App.Dir "\bin"
     DirCreate(folder)
     exe := WriteExe(folder "\SynSeeder.exe")
@@ -63,7 +64,8 @@ InstalledRelease() {
         calls.Push("hand over " name " " tag " " args)
         return state.starts
     }
-    Patches.Set(Updater, "HandOver", handOver)
+    if !realHandOver
+        Patches.Set(Updater, "HandOver", handOver)
     return state
 }
 
@@ -335,6 +337,30 @@ class UpdateTests {
         AssertEq(Updater.Failures("v1.2.0"), 0)
     }
 
+    ; Stop seeding clicked while the update downloads reaches the hand-over,
+    ; which then starts nothing and keeps the lock.
+    static Test_a_stop_during_the_update_starts_no_new_version() {
+        state := InstalledRelease(true)
+        lock := FakeLock({takesLockAfter: 0})
+        Assert(!Updater.UpdateAndHandOver(SeederConfig(), "--seed", state.exe, () => true))
+        AssertEq(lock.events, [])
+        AssertEq(Updater.Failures("v1.2.0"), 0)
+    }
+
+    static Test_the_runs_stop_request_reaches_the_update() {
+        heard := "", onStop := ""
+        Patches.Set(SeedLock, "Claim", (*) => true)
+        Patches.Set(SeedLock, "Announce", (this, fn) => (onStop := fn, ""))
+        update(this, config, args, exe := "", shouldStop := "") {
+            onStop()  ; Stop seeding, clicked while the update downloads
+            heard := shouldStop ? shouldStop() : "no way to ask"
+            return false
+        }
+        Patches.Set(Updater, "UpdateAndHandOver", update)
+        AssertEq(RunSeed(SeederConfig(), "--seed"), 0)
+        AssertEq(heard, true)
+    }
+
     static Test_hand_over_yields_to_another_run_that_holds_the_lock() {
         lock := FakeLock({exitsAfter: 0, freeAtEnd: false})
         Assert(HandOverWith(lock).taken)
@@ -367,6 +393,65 @@ class UpdateTests {
         AssertEq(FilesIn(folder), ["SynSeeder.exe", "SynSeeder.exe.new"])  ; kept for the retries
         Assert(Updater.Replace(target ".new", target, 1, 0))
         AssertEq(Sha256.File(target), Sha256.File(source))
+    }
+
+    static Test_replacing_puts_the_new_file_in_place() {
+        target := WriteExe(App.Dir "\SynSeeder.exe")
+        temp := WriteExe(App.Dir "\SynSeeder.exe.new", 1002, 0x42)
+        sha := Sha256.File(temp)
+        ReplaceFile(temp, target)
+        AssertEq(Sha256.File(target), sha)
+        Assert(!FileExist(temp))
+    }
+
+    static Test_replacing_with_a_missing_file_leaves_the_old_one() {
+        target := WriteExe(App.Dir "\SynSeeder.exe")
+        sha := Sha256.File(target)
+        AssertThrows(OSError, () => ReplaceFile(App.Dir "\SynSeeder.exe.new", target))
+        Assert(!Updater.Replace(App.Dir "\SynSeeder.exe.new", target, 1, 0))
+        AssertEq(Sha256.File(target), sha)
+        Assert(!FileExist(App.Dir "\SynSeeder.exe.new"), "an empty new file was made")
+    }
+
+    static Test_replacing_leaves_the_old_file_while_the_new_one_cant_move() {
+        target := WriteExe(App.Dir "\SynSeeder.exe")
+        temp := WriteExe(App.Dir "\SynSeeder.exe.new", 1002, 0x42)
+        before := Sha256.File(target), update := Sha256.File(temp)
+        hold := FileOpen(temp, "r -d")  ; e.g. a virus scanner reading it
+        try
+            Assert(!Updater.Replace(temp, target, 1, 0))
+        finally
+            hold.Close()
+        AssertEq(Sha256.File(target), before)
+        Assert(Updater.Replace(temp, target, 1, 0))
+        AssertEq(Sha256.File(target), update)
+        Assert(!FileExist(temp))
+    }
+
+    static Test_install_stops_retrying_once_the_new_file_is_gone() {
+        folder := App.Dir "\bin"
+        DirCreate(folder)
+        target := WriteExe(folder "\SynSeeder.exe")
+        source := WriteExe(App.Dir "\" Updater.UPDATE_NAME, 1002, 0x42)
+        sha := Sha256.File(target)
+        Patches.Value(Updater, "REPLACE_TRIES", 1)
+        hold := FileOpen(target, "r -rwd")
+        try
+            Assert(!Updater.Install(target, [], source))
+        finally
+            hold.Close()
+        retry := Updater.retrying
+        try {
+            FileDelete(target ".new")  ; e.g. another copy of the new version installed it meanwhile
+            tries := 0
+            Patches.Set(Updater, "Replace", (*) => (tries++, false))
+            retry()
+            retry()
+            AssertEq(tries, 0, "the retry kept trying to install a file that's gone")
+            AssertEq(Sha256.File(target), sha)
+            AssertEq(FilesIn(folder), ["SynSeeder.exe"])
+        } finally
+            SetTimer(retry, 0)
     }
 
     static Test_install_gives_up_if_it_cant_copy_itself() {
