@@ -43,7 +43,8 @@ rules don't allow bots, so any risk to your account is yours. See the
 
 Made for game v1.7 on Steam and Epic. Its button finder is tested on
 screenshots at 1920x1080, 2560x1440, 3840x2160, 2560x1080, 3440x1440 and
-5120x2160.
+5120x2160. On a narrower screen like 1920x1200, if it can't find the
+buttons, run the game in a 1920x1080 window.
 
 ## For developers
 

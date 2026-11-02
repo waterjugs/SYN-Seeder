@@ -135,10 +135,11 @@ class Updater {
     ; Before a run: if a newer release is out, downloads it and lets it take over.
     ;
     ; True means the new version has taken over the run and this process
-    ; should exit without seeding; false means carry on with this version.
+    ; should exit without seeding; false means carry on with this version (or
+    ; stop, if ``shouldStop`` says so: a run asked to stop doesn't hand over).
     ; ``args`` are this run's arguments, passed on to the new version; ``exe``
     ; is the program being updated (this one unless a test says otherwise).
-    static UpdateAndHandOver(config, args, exe := "") {
+    static UpdateAndHandOver(config, args, exe := "", shouldStop := "") {
         if !Updater.ReleaseBuild()
             return false
         exe := exe != "" ? exe : A_ScriptFullPath
@@ -159,21 +160,33 @@ class Updater {
         Logs.Info("Updating from v" App.VERSION " to " release.tag)
         if !(Updater.Downloaded(release, fresh) || Updater.Download(release, fresh))
             return false
-        if Updater.HandOver(fresh, exe, release.tag, args)
+        result := Updater.HandOver(fresh, exe, release.tag, args, SeedClock(shouldStop))
+        if result == true
             return true
-        Updater.RecordFailure(release.tag)
+        if result != Updater.STOPPED
+            Updater.RecordFailure(release.tag)
         return false
     }
+
+    static STOPPED := "stopped"
 
     ; Starts the new exe to install itself over ``exe`` and take over this run.
     ;
     ; True once it has taken the seeding lock. False if it didn't start; then
-    ; this process has the lock back and carries on as it is.
+    ; this process has the lock back and carries on as it is. STOPPED if the
+    ; run was asked to stop (``clock`` says when): then nothing is started, or
+    ; what was started is ended, and this process has the lock back.
     static HandOver(fresh, exe, tag, args, clock := "") {
         clock := clock ? clock : SeedClock()
+        Sleep(-1)  ; take in a stop asked for while the update was downloading
+        try {
+            clock.Check()
+        } catch SeedStopped {
+            return Updater.STOPPED
+        }
         old := DllCall("GetCurrentProcessId", "UInt")
         SeedLock.Release()
-        pid := 0
+        pid := 0, stopped := false
         try {
             pid := SeedLock.Spawn(fresh, "--install-to " QuoteArg(exe) " --old-pid " old (args != "" ? " " args : ""))
             deadline := clock.Now() + Updater.HANDOVER_SECONDS
@@ -185,17 +198,20 @@ class Updater {
                 clock.Sleep(0.5)
             }
             Logs.Warning(tag " didn't start; carrying on with v" App.VERSION)
+        } catch SeedStopped {
+            stopped := true  ; the new version hasn't taken over yet, so it's ended below
         } catch as err {  ; whatever happens, this process must get the lock back
             Logs.Warning("Couldn't start " tag ": " err.Message)
         }
         if pid && SeedLock.Alive(pid)
             SeedLock.End(pid)
-        try FileDelete(fresh)
+        if !stopped  ; a stopped handover's download is fine for the next run
+            try FileDelete(fresh)
         if !SeedLock.Claim() {
             Logs.Info("Another seeding run started meanwhile; leaving it to that one")
             return true
         }
-        return false
+        return stopped ? Updater.STOPPED : false
     }
 
     ; Run by the new version that HandOver() started: copies this exe over ``target``.
@@ -233,7 +249,7 @@ class Updater {
     static Replace(temp, target, tries, wait) {
         loop tries {
             try {
-                FileMove(temp, target, true)
+                ReplaceFile(temp, target)
                 Logs.Info("Installed v" App.VERSION)
                 return true
             } catch as err {

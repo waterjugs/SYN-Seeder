@@ -15,8 +15,12 @@ class WindowTests {
         Patches.Set(SeedLock, "Runs", (*) => [])
         Patches.Set(SeedLock, "HeldElsewhere", (*) => false)
         Patches.Set(SeedLock, "Alive", (*) => false)
+        Patches.Set(SeedLock, "Find", (*) => 0)
+        Patches.Set(SeedLock, "Owner", (this, hwnd) => hwnd + 1000)
         Patches.Set(HllGame.Prototype, "Running", (*) => false)
+        Patches.Set(HllGame.Prototype, "Pid", (*) => 0)
         Patches.Set(HllGame.Prototype, "Close", (*) => calls.Push("close game"))
+        Patches.Set(HllGame, "_End", (this, pid) => calls.Push("end game " pid))
         if config = "" {
             config := SeederConfig()
             config.start_time := "06:35", config.launcher := "epic"
@@ -210,6 +214,7 @@ class WindowTests {
             AssertEq(calls, ["schedule 06:35", "seed"])
             Assert(InStr(WindowTests.StatusOf(w), "Seeding started.") = 1, WindowTests.StatusOf(w))
             AssertEq([w.seeding, w.spawned], [true, 4242])
+            AssertEq(A_IsCritical, 0, "Seed now left Critical on")
         }
         WindowTests.With(check)
     }
@@ -281,7 +286,7 @@ class WindowTests {
     static FakeRuns(rounds, log, stopsBy := true) {
         looks := 0
         Patches.Set(SeedLock, "Runs", (*) => (looks++, looks <= rounds.Length ? rounds[looks] : []))
-        Patches.Set(SeedLock, "Ask", (this, hwnd) => (log.Push("ask " hwnd), hwnd + 1000))
+        Patches.Set(SeedLock, "Ask", (this, hwnd) => (log.Push("ask " hwnd), SeedLock.Owner(hwnd)))
         Patches.Set(SeedLock, "WaitEnd", (this, pid, seconds) => (log.Push("wait " pid), stopsBy))
         Patches.Set(SeedLock, "End", (this, pid) => log.Push("end " pid))
     }
@@ -335,16 +340,106 @@ class WindowTests {
         WindowTests.With(check)
     }
 
-    static Test_stop_includes_the_run_seed_now_started() {
+    ; A run Seed now started that hasn't named its window yet can't be asked
+    ; to stop, so it gets START_GRACE_MS to; one that hasn't by then is ended
+    ; before it can start the game.
+    static Test_stop_ends_the_run_seed_now_started_if_its_window_isnt_up() {
         log := []
         check(w, calls) {
             WindowTests.FakeRuns([], log)
+            Patches.Value(SetupWindow, "START_GRACE_MS", 300)
+            Patches.Set(SeedLock, "Alive", (this, pid) => pid = 4242 && !Includes(log, "end 4242"))
+            w.SeedNow()
+            Logs.capture := []
+            t0 := A_TickCount
+            w.StopSeeding()
+            AssertEq(log, ["end 4242", "wait 4242"])
+            Assert(A_TickCount - t0 >= 300, "didn't give it time to name its window")
+            AssertEq(calls, ["schedule 06:35", "seed", "close game"])
+            AssertEq(WindowTests.StatusOf(w), "Stopped seeding and closed the game.")
+        }
+        WindowTests.With(check)
+    }
+
+    static Test_stop_asks_the_run_seed_now_started_once_its_window_is_up() {
+        log := []
+        check(w, calls) {
+            WindowTests.FakeRuns([[], [], [3242]], log)  ; names its window on the third look
+            Patches.Value(SetupWindow, "START_GRACE_MS", 5000)
             Patches.Set(SeedLock, "Alive", (this, pid) => pid = 4242 && !Includes(log, "wait 4242"))
             w.SeedNow()
             Logs.capture := []
             w.StopSeeding()
-            AssertEq(log, ["wait 4242"])  ; not named yet, so not asked: waited on, then
+            AssertEq(log, ["ask 3242", "wait 4242"])
             AssertEq(WindowTests.StatusOf(w), "Stopped seeding and closed the game.")
+        }
+        WindowTests.With(check)
+    }
+
+    static Test_stop_lets_the_run_seed_now_started_end_by_itself() {
+        log := []
+        check(w, calls) {
+            WindowTests.FakeRuns([], log)
+            Patches.Value(SetupWindow, "START_GRACE_MS", 5000)
+            alive := 3  ; e.g. it found another run going, and exits
+            Patches.Set(SeedLock, "Alive", (this, pid) => pid = 4242 && alive-- > 0)
+            w.SeedNow()
+            Logs.capture := []
+            w.StopSeeding()
+            AssertEq(log, [])
+            AssertEq(WindowTests.StatusOf(w), "Nothing is seeding right now.")
+        }
+        WindowTests.With(check)
+    }
+
+    ; SynSeeder-update.exe only ever runs as a run's new version.
+    static Test_stop_ends_a_new_version_taking_over_a_run() {
+        log := []
+        check(w, calls) {
+            WindowTests.FakeRuns([], log)
+            found := [5555, 5555]  ; it's still there after the first try
+            Patches.Set(SeedLock, "Find", (this, name) => (log.Push("find " name), found.Length ? found.RemoveAt(1) : 0))
+            Logs.capture := []
+            w.StopSeeding()
+            AssertEq(log, ["find " Updater.UPDATE_NAME, "end 5555", "wait 5555", "find " Updater.UPDATE_NAME])
+            AssertEq(calls, ["close game"])
+            AssertEq(WindowTests.StatusOf(w), "Stopped seeding and closed the game.")
+        }
+        WindowTests.With(check)
+    }
+
+    ; A run that had to be ended can't close a game its launcher starts late,
+    ; so the window watches for one for a while. Seed now stops watching.
+    static Test_after_ending_a_run_the_window_closes_a_game_that_starts_late() {
+        log := [], pid := 0
+        check(w, calls) {
+            WindowTests.FakeRuns([[7]], log, false)
+            Patches.Set(HllGame.Prototype, "Pid", (*) => pid)
+            Logs.capture := []
+            w.StopSeeding()
+            AssertEq(log, ["ask 7", "wait 1007", "end 1007"])
+            Assert(InStr(WindowTests.StatusOf(w), "Stopped seeding and closed the game. If the launcher still starts the game") = 1, WindowTests.StatusOf(w))
+            Assert(w.lateWatch, "not watching for a late game")
+            w.lateWatch.Call()  ; the timer, before the game is up
+            AssertEq(calls, ["close game"])
+            pid := 8080
+            w.lateWatch.Call()
+            AssertEq(calls, ["close game", "end game 8080"])
+            AssertEq(w.lateWatch, "", "still watching")
+            w.WatchLateGame(60)
+            w.SeedNow()
+            AssertEq(w.lateWatch, "", "Seed now didn't stop the watch")
+        }
+        WindowTests.With(check)
+    }
+
+    static Test_a_run_that_stops_by_itself_needs_no_watch() {
+        log := []
+        check(w, calls) {
+            WindowTests.FakeRuns([[7]], log)
+            Logs.capture := []
+            w.StopSeeding()
+            AssertEq(w.lateWatch, "")
         }
         WindowTests.With(check)
     }
@@ -459,6 +554,77 @@ class WindowTests {
             AssertEq(w.picker, "")
             w.OpenPicker("hour")    ; the other one opens
             AssertEq(w.picker.which, "hour")
+        }
+        WindowTests.With(check)
+    }
+
+    ; The grid opens on the monitor its picker is on: below the picker, or
+    ; above it when there's no room below, and never off that monitor's edge.
+    static Test_time_grid_stays_on_its_pickers_monitor() {
+        check(w, calls) {
+            w.hourField.GetPos(&fx, &fy, &fw, &fh)
+            WinGetClientPos(&cx, &cy, , , w.gui)
+            top := cy + fy, bottom := cy + fy + fh, right := cx + fx + fw
+            gap := Look.Px(4), gridW := 2 * gap + 6 * Look.Px(44), gridH := 2 * gap + 4 * Look.Px(30)
+            asked := []
+            place(area) {
+                Patches.Set(SetupWindow, "WorkAreaAt", (this, l, t, r, b) => (asked.Push([l, t, r, b]), area))
+                w.OpenPicker("hour")
+                WinGetPos(&x, &y, &gw, &gh, w.picker.gui)
+                w.ClosePicker()
+                AssertEq([gw, gh], [gridW, gridH], "grid size")
+                return [x, y]
+            }
+            ; a monitor with room below
+            AssertEq(place({left: cx - 2000, top: cy - 2000, right: cx + 2000, bottom: cy + 2000}), [right - gridW, bottom + gap])
+            AssertEq(asked[1], [cx + fx, top, right, bottom], "the picker's own rectangle")
+            ; one that ends just under the picker: above it
+            AssertEq(place({left: cx - 2000, top: cy - 2000, right: cx + 2000, bottom: bottom + 10}), [right - gridW, top - gap - gridH])
+            ; a monitor to the left whose right edge cuts through the grid: moved onto it
+            AssertEq(place({left: right - gridW - 3000, top: cy - 2000, right: right - 20, bottom: cy + 2000}), [right - 20 - gridW, bottom + gap])
+            ; and one whose left edge does
+            AssertEq(place({left: right - 10, top: cy - 2000, right: right + 3000, bottom: cy + 2000}), [right - 10, bottom + gap])
+        }
+        WindowTests.With(check)
+    }
+
+    static Test_work_area_is_the_monitors() {
+        MonitorGetWorkArea(MonitorGetPrimary(), &l, &t, &r, &b)
+        area := SetupWindow.WorkAreaAt(l + 10, t + 10, l + 50, t + 30)
+        AssertEq([area.left, area.top, area.right, area.bottom], [l, t, r, b])
+        area := SetupWindow.WorkAreaAt(r + 50000, b + 50000, r + 50040, b + 50020)  ; nowhere: the nearest monitor
+        Assert(area.right > area.left && area.bottom > area.top, "no area")
+    }
+
+    ; A message longer than two lines makes the status line taller, moving
+    ; what's under it down and growing the window; a short one shrinks it back.
+    static Test_long_status_grows_the_window() {
+        check(w, calls) {
+            terms := ""
+            for ctrl in w.gui
+                if ctrl.Type = "Text" && ctrl.Text == "Terms of Service"
+                    terms := ctrl
+            height := w.height
+            w.statusLine.GetPos(, &top, , &lineH)
+            terms.GetPos(, &termsY)
+            long := "Couldn't set up the schedule:"
+            loop 8
+                long .= " Windows said something long about why it couldn't, number " A_Index "."
+            w.Status(long, Look.FLARE)
+            w.statusLine.GetPos(, &top2, , &lineH2)
+            terms.GetPos(, &termsY2)
+            grew := lineH2 - lineH
+            Assert(grew > 0, "the status line didn't grow")
+            Assert(lineH2 >= SetupWindow.TextHeight(w.statusLine, long, w.statusW), "the message doesn't fit")
+            AssertEq([top2, termsY2 - termsY, w.height - height], [top, grew, grew])
+            for ctrl in w.gui {
+                ctrl.GetPos(&x, &y, &cw, &ch)
+                Assert(y + ch <= w.height, ctrl.Type " '" ctrl.Text "' is below the window")
+            }
+            w.Status("Saved.")
+            w.statusLine.GetPos(, , , &lineH3)
+            terms.GetPos(, &termsY3)
+            AssertEq([lineH3, termsY3, w.height], [lineH, termsY, height])
         }
         WindowTests.With(check)
     }

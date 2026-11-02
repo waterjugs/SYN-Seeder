@@ -227,8 +227,18 @@ class WinApi {
             return DllCall("MapVirtualKeyExW", "UInt", WinApi.VK[key], "UInt", 0, "Ptr", 0, "UInt")
         thread := DllCall("GetWindowThreadProcessId", "Ptr", DllCall("GetForegroundWindow", "Ptr"), "Ptr", 0, "UInt")
         layout := DllCall("GetKeyboardLayout", "UInt", thread, "Ptr")
-        vk := DllCall("VkKeyScanExW", "UShort", Ord(key), "Ptr", layout, "Short") & 0xFF
+        vk := WinApi.KeyFor(key, DllCall("VkKeyScanExW", "UShort", Ord(key), "Ptr", layout, "Short"))
         return DllCall("MapVirtualKeyExW", "UInt", vk, "UInt", 0, "Ptr", layout, "UInt")  ; MAPVK_VK_TO_VSC
+    }
+
+    ; The virtual key to press for ``key``, given what VkKeyScanExW says types
+    ; it on the game's layout. When no key types a letter on its own (-1 on
+    ; Russian, Greek and other non-Latin layouts, or only with Shift or AltGr),
+    ; the letter's own key: A to Z keep their places on every layout.
+    static KeyFor(key, scan) {
+        if (scan = -1 || scan & 0xFF00) && key ~= "^[a-z]$"
+            return Ord(StrUpper(key))
+        return scan & 0xFF
     }
 
     static KeyDown(key) => WinApi._Send([WinApi._Key(WinApi._Scancode(key), 0, 0x8)])  ; KEYEVENTF_SCANCODE

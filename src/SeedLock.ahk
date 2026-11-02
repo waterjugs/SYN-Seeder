@@ -69,10 +69,18 @@ class SeedLock {
 
     ; Asks the run with main window ``hwnd`` to stop. Returns its process ID.
     static Ask(hwnd) {
-        DllCall("GetWindowThreadProcessId", "Ptr", hwnd, "UInt*", &pid := 0)
         DllCall("PostMessageW", "Ptr", hwnd, "UInt", SeedLock.StopMessage, "Ptr", 0, "Ptr", 0)
+        return SeedLock.Owner(hwnd)
+    }
+
+    ; The process ID of the program a window belongs to.
+    static Owner(hwnd) {
+        DllCall("GetWindowThreadProcessId", "Ptr", hwnd, "UInt*", &pid := 0)
         return pid
     }
+
+    ; The process ID of a program named ``name``, or 0 (SeedLock's, so tests can swap it).
+    static Find(name) => ProcessExist(name)
 
     ; Whether a process is still running, waiting up to ``seconds`` for one to
     ; end (true if it did), and ending one: SeedLock's, so tests can swap them.

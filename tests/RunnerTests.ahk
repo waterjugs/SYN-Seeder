@@ -303,6 +303,21 @@ class RunnerTests {
         AssertEq(r.game.launches, 2)
     }
 
+    static Test_a_screen_that_cant_be_read_for_a_while_is_waited_out() {
+        r := MakeRun()
+        realRefresh := r.screen.GetMethod("Refresh")
+        flaky(this) {  ; every third capture fails, for the first 60
+            realRefresh(this)
+            return Mod(this.refreshes, 3) != 0 || this.refreshes > 60
+        }
+        r.screen.DefineProp("Refresh", {Call: flaky})
+        AssertEq(SeedWith(r.config, r.game, r.screen, Statuses([10, 10, 40, 79, 80]), r.clock), Runner.SEEDED)
+        AssertEq(r.screen.clicks, ["menu_enlist", "browser_search", "browser_join", "admin_yes", "force_us",
+            "infantry_create", "create_unit_button"])
+        AssertEq(r.game.launches, 1)
+        AssertEq(r.game.closes, 1)  ; only when leaving
+    }
+
     static Test_rejoins_after_kick_to_menu() {
         r := MakeRun()
         screen := r.screen

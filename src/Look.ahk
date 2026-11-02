@@ -68,15 +68,21 @@ class Look {
         return stops[stops.Length][2]
     }
 
+    static FONT_WAIT := 3          ; seconds the window waits for fonts it hasn't got yet
+    static FONT_RETRY_HOURS := 6   ; after that failed, how long the window opens without trying again
+
+    ; Where a built SynSeeder.exe keeps the fonts it downloads.
+    static FontFolder => App.InstallDir "\fonts"
+
     ; Makes the fonts usable by this process only, without installing them. A
-    ; built exe downloads them into %LOCALAPPDATA%\SynSeeder\fonts the first
-    ; time; a script uses the repository's assets\fonts. Windows' own fonts
-    ; stand in for any that can't be had.
+    ; built exe downloads them into %LOCALAPPDATA%\SynSeeder\fonts (see
+    ; GetFonts); a script uses the repository's assets\fonts. Windows' own
+    ; fonts stand in for any that can't be had.
     static LoadFonts() {
         if A_IsCompiled {
-            folder := App.InstallDir "\fonts"
+            folder := Look.FontFolder
             try
-                RepoFiles.Fetch(folder, FontFiles.SHA256, Build.COMMIT != "" ? Build.COMMIT : "main", "assets/fonts", "font", 10, true)
+                Look.GetFonts(Look.FONT_WAIT, true)
             catch as err
                 Logs.Warning("Couldn't get the fonts: " err.Message)
         } else {  ; SynSeeder.ahk, or a script in tests\
@@ -89,6 +95,34 @@ class Look {
                 loaded += DllCall("gdi32\AddFontResourceExW", "Str", path, "UInt", 0x10, "Ptr", 0) > 0  ; FR_PRIVATE
         }
         return loaded
+    }
+
+    ; Downloads the fonts the font folder lacks from GitHub, all at once,
+    ; waiting ``wait`` seconds at most. The window waits FONT_WAIT seconds,
+    ; and ``sparing`` it: once a try has failed, it opens without trying again
+    ; for FONT_RETRY_HOURS, so a PC that can't reach GitHub isn't kept waiting
+    ; on every open. A seeding run has time to wait longer, and always tries.
+    static GetFonts(wait, sparing := false) {
+        folder := Look.FontFolder, note := folder "\download-failed.txt"
+        if sparing && Look._FailedLately(note)
+            return
+        missing := RepoFiles.FetchAtOnce(folder, FontFiles.SHA256, Build.COMMIT != "" ? Build.COMMIT : "main", "assets/fonts", "font", wait)
+        if missing.Length {
+            out := FileOpen(note, "w")
+            out.Write(A_NowUTC)  ; when, in the file itself: Windows doesn't always update a file's time
+            out.Close()
+        } else if FileExist(note) {
+            FileDelete(note)
+        }
+    }
+
+    ; True if ``note`` says a try failed less than FONT_RETRY_HOURS ago.
+    static _FailedLately(note) {
+        try {
+            hours := DateDiff(A_NowUTC, Trim(FileRead(note)), "Hours")
+            return hours >= 0 && hours < Look.FONT_RETRY_HOURS  ; (a clock put back doesn't count)
+        }
+        return false  ; no note, or one that can't be read: try
     }
 
     ; The first of ``faces`` that Windows has, or the last one.

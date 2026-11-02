@@ -72,33 +72,39 @@ class SelfTest {
     }
 
     ; The button finder expects each working pixel to be the rounded average of
-    ; an f x f block of screen pixels, as its screenshot cases are made
-    ; (GameScreen.Shrink).
+    ; the screen pixels it covers, as its screenshot cases are made
+    ; (GameScreen.Shrink): an f x f block for a whole factor f, and a weighted
+    ; average for the captures from 721 to 1079 pixels high that are shrunk to
+    ; 720 high.
     static Shrinking(check, note) {
-        for f in [2, 3, 4] {
-            result := SelfTest.ShrinkError(96, 60, f)
-            check("screen shrink by " f " averages blocks", result.max <= 2,
+        for size in [[96, 60, 48, 30], [96, 60, 32, 20], [96, 60, 24, 15], [96, 60, 64, 40], [150, 107, 101, 72]] {
+            result := SelfTest.ShrinkError(size*)
+            check("screen shrink from " size[1] "x" size[2] " to " size[3] "x" size[4] " averages", result.max <= 2,
                 "largest difference " result.max ", average " Round(result.mean, 3) ", by " result.how)
         }
-        ; How long a big screen takes: 5120x2160 shrinks by 3.
-        src := GameScreen._MakeDib(5120, 2160)
-        dst := GameScreen._MakeDib(5120 // 3, 2160 // 3)
-        try {
-            DllCall("QueryPerformanceFrequency", "Int64*", &freq := 0)
-            DllCall("QueryPerformanceCounter", "Int64*", &t0 := 0)
-            how := GameScreen.Shrink(src, dst, 3)
-            DllCall("QueryPerformanceCounter", "Int64*", &t1 := 0)
-            note("shrinking 5120x2160", Round((t1 - t0) * 1000 / freq) " ms, by " how)
-        } finally {
-            GameScreen._FreeDibOf(src)
-            GameScreen._FreeDibOf(dst)
+        ; How long big screens take: 5120x2160 shrinks by 3, 1920x1079 to 720 high.
+        DllCall("QueryPerformanceFrequency", "Int64*", &freq := 0)
+        for size in [[5120, 2160], [1920, 1079]] {
+            work := Vision.WorkSize(size*)
+            src := GameScreen._MakeDib(work[3] is Integer ? work[1] * work[3] : size[1], work[3] is Integer ? work[2] * work[3] : size[2])
+            dst := GameScreen._MakeDib(work[1], work[2])
+            try {
+                DllCall("QueryPerformanceCounter", "Int64*", &t0 := 0)
+                how := GameScreen.Shrink(src, dst)
+                DllCall("QueryPerformanceCounter", "Int64*", &t1 := 0)
+                note("shrinking " size[1] "x" size[2], "to " work[1] "x" work[2] " in " Round((t1 - t0) * 1000 / freq) " ms, by " how)
+            } finally {
+                GameScreen._FreeDibOf(src)
+                GameScreen._FreeDibOf(dst)
+            }
         }
     }
 
-    ; How far the app's shrink strays from block averages on a w x h test pattern.
-    static ShrinkError(w, h, f) {
+    ; How far the app's shrink from w x h to dw x dh strays from the averages
+    ; it should give, on a test pattern.
+    static ShrinkError(w, h, dw, dh) {
         src := GameScreen._MakeDib(w, h)
-        dst := GameScreen._MakeDib(w // f, h // f)
+        dst := GameScreen._MakeDib(dw, dh)
         try {
             seed := 12345
             loop w * h {  ; noisy pattern with some smooth areas, like a game screen
@@ -108,21 +114,34 @@ class SelfTest {
                 pixel := (y // 12) & 1 ? (seed >> 8) & 0xFFFFFF : base
                 NumPut("UInt", pixel, src.bits, i * 4)
             }
-            how := GameScreen.Shrink(src, dst, f)
+            how := GameScreen.Shrink(src, dst)
+            f := w // dw, whole := w = dw * f && h = dh * f
+            ; for each pixel along an axis: [first source pixel, [weights...]]
+            wy := Vision._AxisWeights(h, dh), wx := Vision._AxisWeights(w, dw)
             worst := 0, total := 0, count := 0
-            loop h // f {
-                by := A_Index - 1
-                loop w // f {
-                    bx := A_Index - 1
-                    got := NumGet(dst.bits, (by * (w // f) + bx) * 4, "UInt")
+            for oy, rows in wy {
+                for ox, cols in wx {
+                    got := NumGet(dst.bits, ((oy - 1) * dw + ox - 1) * 4, "UInt")
                     loop 3 {
-                        shift := (A_Index - 1) * 8, sum := 0
-                        loop f {
-                            yy := by * f + A_Index - 1
-                            loop f
-                                sum += NumGet(src.bits, (yy * w + bx * f + A_Index - 1) * 4, "UInt") >> shift & 255
+                        shift := (A_Index - 1) * 8
+                        if whole {  ; exactly, in whole numbers
+                            sum := 0
+                            loop f {
+                                yy := (oy - 1) * f + A_Index - 1
+                                loop f
+                                    sum += NumGet(src.bits, (yy * w + (ox - 1) * f + A_Index - 1) * 4, "UInt") >> shift & 255
+                            }
+                            want := (sum + f * f // 2) // (f * f)
+                        } else {
+                            sum := 0.0
+                            for j, wy1 in rows[2] {
+                                line := 0.0, at := (rows[1] + j - 1) * w + cols[1]
+                                for i, wx1 in cols[2]
+                                    line += wx1 * (NumGet(src.bits, (at + i - 1) * 4, "UInt") >> shift & 255)
+                                sum += wy1 * line
+                            }
+                            want := Floor(sum + 0.5)
                         }
-                        want := (sum + f * f // 2) // (f * f)
                         diff := Abs((got >> shift & 255) - want)
                         worst := Max(worst, diff), total += diff, count++
                     }
@@ -161,19 +180,33 @@ class SelfTest {
 
     static Screen(note) {
         screen := GameScreen(Map())
-        screen.Refresh()
+        if !screen.Refresh() {
+            note("screen", "couldn't capture it (Windows error " A_LastError ")")
+            return
+        }
+        work := Vision.WorkSize(screen.area.w, screen.area.h)
         note("screen", screen.area.w "x" screen.area.h " at " screen.area.left "," screen.area.top
-            . ", shrunk by " Vision.Factor(screen.area.h) (screen.blackTicks ? ", black" : ""))
+            . ", matched at " work[1] "x" work[2] (screen.blackTicks ? ", black" : ""))
         note("idle", Round(WinApi.UserIdleSeconds(), 1) " s; desktop " (WinApi.DesktopUnlocked() ? "unlocked" : "locked"))
     }
 
+    ; Read here rather than through ServerStats.Fetch and Updater.Latest, which
+    ; only log why they failed, so the self-test's own log shows the reason.
     static Server(note) {
-        status := ServerStats.Fetch(SeederConfig().crcon_url)
-        note("server", status ? status.name ": " status.players " players (" status.allied " v " status.axis ")" : "unreachable")
+        try {
+            status := ServerStats.Read(Http.Text(SeederConfig().crcon_url, "application/json", 10))
+            note("server", status.name ": " status.players " players (" status.allied " v " status.axis ")")
+        } catch as err {
+            note("server", "unreachable (" err.Message ")")
+        }
     }
 
     static Release(note) {
-        release := Updater.Latest()
-        note("latest release", release ? release.tag : "none")
+        try {
+            release := Updater.ParseRelease(Json.Load(Http.Text(Updater.LATEST_RELEASE, "application/vnd.github+json", 15)))
+            note("latest release", release.tag)
+        } catch as err {
+            note("latest release", "none (" err.Message ")")
+        }
     }
 }

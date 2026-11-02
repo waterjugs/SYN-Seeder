@@ -31,18 +31,25 @@ class Http {
         return req
     }
 
-    ; A response's body, read as UTF-8.
+    ; A response's body, read as UTF-8. ResponseBody is a new array each time,
+    ; freed as soon as nothing holds it, so ``body`` keeps it until StrGet has
+    ; copied the bytes.
     static BodyText(req) {
-        data := Http._Bytes(req.ResponseBody, &size)
-        return size ? StrGet(data, size, "UTF-8") : ""
+        body := req.ResponseBody
+        data := Http._Bytes(body, &size)
+        text := size ? StrGet(data, size, "UTF-8") : ""
+        return text
     }
 
     ; The body of a GET request as text (read as UTF-8).
     static Text(url, accept := "application/json", timeout := 15) => Http.BodyText(Http.Get(url, accept, timeout))
 
     ; Saves the body of a GET request to ``path``. Returns its size in bytes.
-    static Download(url, path, accept := "application/octet-stream", timeout := 30) {
-        body := Http.Get(url, accept, timeout).ResponseBody
+    static Download(url, path, accept := "application/octet-stream", timeout := 30) => Http.Save(Http.Get(url, accept, timeout), path)
+
+    ; Saves a response's body to ``path``. Returns its size in bytes.
+    static Save(req, path) {
+        body := req.ResponseBody
         data := Http._Bytes(body, &size)
         out := FileOpen(path, "w")
         if !out
@@ -65,40 +72,106 @@ class Http {
 }
 
 ; Files SynSeeder downloads from its GitHub repository, rather than carrying
-; them inside the exe: the button images and the window's fonts.
+; them inside the exe: the button images and the window's fonts. A download
+; is only kept if its checksum matches, and is saved under a name of this
+; process's own until then, so two SynSeeders fetching at once can't mix
+; their files up.
 class RepoFiles {
+    ; Where ``fileName`` in ``path`` is in the repository at ``ref`` (a commit,
+    ; or a branch for a build made outside CI).
+    static Url(ref, path, fileName) => "https://raw.githubusercontent.com/" App.REPO "/" ref "/" path "/" fileName
+
     ; Makes sure ``folder`` holds every file in ``files`` (name -> SHA-256),
     ; downloading missing or changed ones from ``path`` in the repository at
-    ; ``ref`` (a commit, or a branch for a build made outside CI). A download
-    ; is only kept if its checksum matches. ``what`` names the files in the
-    ; log. With ``giveUp``, stops at the first file it can't get. Returns the
-    ; names it couldn't get.
+    ; ``ref``, one at a time. A file that doesn't match and can't be replaced
+    ; is deleted. ``what`` names the files in the log. With ``giveUp``, stops
+    ; at the first file it can't get. Returns the names it couldn't get.
     static Fetch(folder, files, ref, path, what, timeout := 30, giveUp := false) {
         DirCreate(folder)
         missing := []
         for fileName, sha in files {
             target := folder "\" fileName
-            if FileExist(target) && Sha256.File(target) = sha
+            if Sha256.File(target) = sha
                 continue
             if giveUp && missing.Length {
                 missing.Push(fileName)
                 continue
             }
-            temp := target ".part"
+            temp := RepoFiles._Temp(target)
             try {
-                Http.Download("https://raw.githubusercontent.com/" App.REPO "/" ref "/" path "/" fileName, temp, "application/octet-stream", timeout)
-                if Sha256.File(temp) = sha {
-                    FileMove(temp, target, true)
-                    continue
-                }
-                Logs.Warning("Downloaded " fileName ", but it isn't the right file; not using it")
+                Http.Download(RepoFiles.Url(ref, path, fileName), temp, "application/octet-stream", timeout)
+                RepoFiles._Keep(temp, target, sha)
             } catch as err {
                 Logs.Warning("Couldn't download the " what " " fileName ": " err.Message)
+                RepoFiles._Drop(temp, target, sha)
+                missing.Push(fileName)
             }
-            try FileDelete(temp)
-            missing.Push(fileName)
         }
         return missing
+    }
+
+    ; Like Fetch, but downloads them all at once and waits ``wait`` seconds at
+    ; most in all, giving up on any that haven't come by then.
+    static FetchAtOnce(folder, files, ref, path, what, wait) {
+        DirCreate(folder)
+        missing := [], pending := Map()
+        for fileName, sha in files {
+            if Sha256.File(folder "\" fileName) = sha
+                continue
+            try {
+                pending[fileName] := Http.Start(RepoFiles.Url(ref, path, fileName), "application/octet-stream", wait, true)
+            } catch as err {
+                Logs.Warning("Couldn't download the " what " " fileName ": " err.Message)
+                RepoFiles._Drop("", folder "\" fileName, sha)
+                missing.Push(fileName)
+            }
+        }
+        deadline := A_TickCount + Round(wait * 1000)
+        while pending.Count {
+            names := []
+            for fileName in pending
+                names.Push(fileName)
+            for fileName in names {
+                req := pending[fileName], target := folder "\" fileName, temp := RepoFiles._Temp(target)
+                try {
+                    if !Http.Done(req) {
+                        if A_TickCount < deadline
+                            continue
+                        try req.Abort()
+                        throw Error("no answer in " Format("{:g}", wait) " seconds")
+                    }
+                    Http.Save(Http.Check(req), temp)
+                    RepoFiles._Keep(temp, target, files[fileName])
+                } catch as err {
+                    Logs.Warning("Couldn't download the " what " " fileName ": " err.Message)
+                    RepoFiles._Drop(temp, target, files[fileName])
+                    missing.Push(fileName)
+                }
+                pending.Delete(fileName)
+            }
+            if pending.Count
+                Sleep(20)
+        }
+        return missing
+    }
+
+    ; This process's name for a download of ``target`` until it's checked.
+    static _Temp(target) => target "." DllCall("GetCurrentProcessId", "UInt") ".part"
+
+    ; Puts the download ``temp`` in place as ``target`` if its checksum is ``sha``; throws if it isn't.
+    static _Keep(temp, target, sha) {
+        if Sha256.File(temp) != sha
+            throw Error("the download isn't the right file")
+        FileMove(temp, target, true)
+    }
+
+    ; Clears up after a failed download: its temp file, and an old or changed
+    ; copy of the file, which would never be used.
+    static _Drop(temp, target, sha) {
+        if temp != ""
+            try FileDelete(temp)
+        if FileExist(target) && Sha256.File(target) != sha
+            try FileDelete(target)
     }
 }
 

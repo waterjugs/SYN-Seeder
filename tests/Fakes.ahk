@@ -5,6 +5,27 @@ class FakeClock {
     __New() => this.at := 0.0
     Now() => this.at
     Sleep(seconds) => this.at += seconds
+    Check() => ""
+}
+
+; A FakeClock asked to stop at ``stopAt``: from then on Sleep and Check throw
+; SeedStopped, as SeedClock's do.
+class StoppingClock extends FakeClock {
+    __New(stopAt) {
+        super.__New()
+        this.stopAt := stopAt
+    }
+
+    Sleep(seconds) {
+        this.Check()
+        this.at += seconds
+        this.Check()
+    }
+
+    Check() {
+        if this.at >= this.stopAt
+            throw SeedStopped("Stopped")
+    }
 }
 
 ; ``visible`` is the set of button names on screen (a Map of name -> true).
@@ -37,7 +58,11 @@ class FakeScreen {
             this.visible[name] := true
     }
 
-    Refresh() => this.refreshes++
+    ; True: the fake screen can always be read (see FailingScreen).
+    Refresh() {
+        this.refreshes++
+        return true
+    }
 
     Find(name, region := "") => this.visible.Has(name) ? [name, 0] : ""
 
@@ -205,6 +230,23 @@ AssertEq(got, want, message := "") {
         throw Error((message != "" ? message ": " : "") "got " Show(got) ", expected " Show(want), -1)
 }
 
+; Calls ``fn`` and checks that it throws a ``kind`` (an error class). Returns the error.
+AssertThrows(kind, fn, message := "") {
+    try {
+        fn()
+    } catch as err {
+        if err is kind
+            return err
+        throw Error((message != "" ? message ": " : "") "threw " Type(err) " (" err.Message "), expected "
+            . kind.Prototype.__Class, -1)
+    }
+    throw Error((message != "" ? message ": " : "") "didn't throw " kind.Prototype.__Class, -1)
+}
+
+Fail(message) {
+    throw Error(message, -1)
+}
+
 ; Deep equality for strings, numbers, Arrays and Maps; strings compare case-sensitively.
 Same(a, b) {
     if a is Array {
@@ -280,4 +322,26 @@ Slice(list, start, stop := "") {
     loop stop - start + 1
         out.Push(list[start + A_Index - 1])
     return out
+}
+
+; A stand-in WinHTTP request whose ResponseBody, like the real one, is a new
+; byte array on every read. ``ready`` false: one that never gets its answer.
+class FakeResponse {
+    __New(text, ready := true) {
+        this.bytes := Buffer(Max(0, StrPut(text, "UTF-8") - 1))
+        if this.bytes.Size
+            StrPut(text, this.bytes, "UTF-8")
+        this.ready := ready, this.aborted := false
+    }
+    WaitForResponse(timeout := -1) => this.ready
+    Abort() => this.aborted := true
+    Status => 200
+    ResponseBody {
+        get {
+            body := ComObjArray(0x11, this.bytes.Size)  ; VT_UI1
+            if this.bytes.Size
+                DllCall("RtlMoveMemory", "Ptr", NumGet(ComObjValue(body), 8 + A_PtrSize, "Ptr"), "Ptr", this.bytes, "UPtr", this.bytes.Size)
+            return body
+        }
+    }
 }

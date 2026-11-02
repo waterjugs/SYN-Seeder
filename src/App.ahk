@@ -156,6 +156,19 @@ QuoteArg(arg) {
 ; own folder, so a relative path is taken from the folder it was started from.
 StartPath(path) => path = "" || RegExMatch(path, "^([A-Za-z]:|\\)") ? path : A_InitialWorkingDir "\" path
 
+; Puts the finished file ``temp`` in place of ``target``: writes it to disk
+; first, then swaps it in with one rename, so a power cut leaves the old file
+; or the new one, never half of one. Throws OSError if either step fails.
+ReplaceFile(temp, target) {
+    file := FileOpen(temp, "rw")  ; FlushFileBuffers needs write access; "rw" keeps the contents
+    flushed := DllCall("FlushFileBuffers", "Ptr", file.Handle), code := A_LastError
+    file.Close()
+    if !flushed
+        throw OSError(code)
+    if !DllCall("MoveFileExW", "Str", temp, "Str", target, "UInt", 0x1 | 0x8)  ; REPLACE_EXISTING | WRITE_THROUGH
+        throw OSError()
+}
+
 ; Joins an array's items with ``sep``.
 JoinList(items, sep := ", ") {
     out := ""

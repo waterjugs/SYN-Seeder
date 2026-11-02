@@ -38,11 +38,15 @@ class Flow {
     static STUCK_REPEATS := 15     ; the same screen this many ticks in a row also gets a screenshot
     static KEEP_SCREENSHOTS := 20  ; newest debug screenshots kept
 
+    ; CurrentScreen's answer when the screen couldn't be read: nothing to do this tick.
+    static NO_SCREEN := "(no screen)"
+
     static IsOverlay(name) => name = "admin_yes" || name = "game_menu_leave"
 
-    ; Which menu is showing, or "" when in game or loading.
+    ; Which menu is showing, "" when in game or loading, or NO_SCREEN.
     static CurrentScreen(screen) {
-        screen.Refresh()
+        if !screen.Refresh()
+            return Flow.NO_SCREEN
         for name in Flow.SCREENS
             if screen.Find(name)
                 return name
@@ -117,6 +121,10 @@ class Navigator {
                 continue
             }
             name := Flow.CurrentScreen(this.screen)
+            if name == Flow.NO_SCREEN {  ; try again on the next tick
+                clock.Sleep(2)
+                continue
+            }
             if name != "admin_yes"
                 this.adminClicks := 0  ; each message gets its own clicks
             if name = "" {

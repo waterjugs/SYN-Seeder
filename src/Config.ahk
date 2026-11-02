@@ -67,7 +67,7 @@ class SeederConfig {
         text := Json.Dump(data, "  ", order)
         temp := path ".tmp"
         FileOpen(temp, "w", "UTF-8-RAW").Write(text)
-        FileMove(temp, path, true)
+        ReplaceFile(temp, path)
         return path
     }
 }

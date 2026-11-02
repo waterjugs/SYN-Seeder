@@ -11,11 +11,16 @@ class HllGame {
     ; Seconds without mouse or keyboard use before the seeder pulls the game in
     ; front of whatever someone was doing; until then it waits for them.
     static IDLE_BEFORE_TAKEOVER := 15
+    ; Seconds to keep watching for a game the launcher starts late, to close it.
+    static LATE_START_SECONDS := 90
 
     ; ``clock`` paces the waits in Launch, so a stop request ends them.
-    __New(config, clock := "") {
+    ; ``lateClock`` paces the watch for a late start after a stop, which the
+    ; stopped clock can't (tests pass their own).
+    __New(config, clock := "", lateClock := "") {
         this.config := config
         this.clock := clock ? clock : SeedClock()
+        this.lateClock := lateClock ? lateClock : SeedClock()
         this.focusWait := ""     ; why the game isn't in front, once logged
         this.altTapped := false  ; ForceToFront's Alt tap, used once per wait
     }
@@ -133,17 +138,28 @@ class HllGame {
         return "steam://rungameid/" this.config.steam_app_id
     }
 
-    ; Starts the game and waits for its window. False on timeout.
+    ; Asks Steam or Epic to start the game.
+    static Start(uri) => Run(uri)
+
+    ; Starts the game and waits for its window. False on timeout. A stop
+    ; asked for before the game shows up still closes it if it starts within
+    ; LATE_START_SECONDS.
     Launch(timeout := "") {
         uri := this.LaunchUri()
+        this.clock.Check()  ; already asked to stop: don't start it
         Logs.Info("Launching the game via " uri)
-        Run(uri)
+        HllGame.Start(uri)
         timeout := timeout = "" ? this.config.launch_timeout : timeout
         deadline := this.clock.Now() + timeout
-        while this.clock.Now() < deadline {
-            if this.Window()
-                return true
-            this.clock.Sleep(2)
+        try {
+            while this.clock.Now() < deadline {
+                if this.Window()
+                    return true
+                this.clock.Sleep(2)
+            }
+        } catch SeedStopped as stop {
+            this.CloseLateStart(Min(HllGame.LATE_START_SECONDS, Max(deadline - this.clock.Now(), 0)))
+            throw stop
         }
         names := Map()
         for item in HllGame.WindowedProcesses()
@@ -235,6 +251,26 @@ class HllGame {
                 this.clock.Sleep(5)
             catch SeedStopped
                 return
+        }
+    }
+
+    ; After a stop while the launcher was starting the game: watches up to
+    ; ``seconds`` for the game and closes it if it shows up.
+    CloseLateStart(seconds) {
+        if this.Pid() {
+            this.Close()
+            return
+        }
+        if seconds <= 0
+            return
+        Logs.Info("Watching up to " Round(seconds) " s for the game the launcher is starting, to close it")
+        endAt := this.lateClock.Now() + seconds
+        while this.lateClock.Now() < endAt {
+            this.lateClock.Sleep(2)
+            if pid := this.Pid() {
+                HllGame._End(pid)
+                return
+            }
         }
     }
 

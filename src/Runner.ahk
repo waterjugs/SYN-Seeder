@@ -137,6 +137,8 @@ class Runner {
                 if !game.Focus()
                     continue  ; someone else has the screen; send nothing
                 name := Flow.CurrentScreen(screen)
+                if name == Flow.NO_SCREEN
+                    continue  ; couldn't see the screen; look again next time
                 if Flow.IsOverlay(name) {
                     nav.Handle(name)
                 } else if name != "" {
