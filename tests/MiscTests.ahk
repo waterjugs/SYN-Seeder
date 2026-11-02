@@ -169,6 +169,13 @@ class MiscTests {
         AssertEq(QuoteArg("C:\dir with space\"), '"C:\dir with space\\"')
     }
 
+    static Test_command_line_paths_start_where_the_program_was_started() {
+        AssertEq(StartPath("C:\logs\selftest.log"), "C:\logs\selftest.log")
+        AssertEq(StartPath("\\server\share\a.png"), "\\server\share\a.png")
+        AssertEq(StartPath("build\fixtures"), A_InitialWorkingDir "\build\fixtures")
+        AssertEq(StartPath(""), "")
+    }
+
     static Test_uri_quote_and_unquote() {
         AssertEq(UriQuote("a:b c/é~_.-"), "a%3Ab%20c%2F%C3%A9~_.-")
         AssertEq(UriUnquote("a%3Ab%20c%2F%C3%A9"), "a:b c/é")

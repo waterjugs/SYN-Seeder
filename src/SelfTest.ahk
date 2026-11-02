@@ -5,6 +5,7 @@
 
 class SelfTest {
     static Run(logPath) {
+        logPath := StartPath(logPath)
         lines := [], ok := true
         check(name, pass, detail := "") {
             lines.Push((pass ? "PASS " : "FAIL ") name (detail != "" ? " (" detail ")" : ""))

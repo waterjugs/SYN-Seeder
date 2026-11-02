@@ -96,9 +96,9 @@ RunCheck(finder, crops, check, frame) {
 }
 
 Main() {
-    folder := A_Args.Length >= 1 ? A_Args[1] : A_ScriptDir "\..\build\fixtures"
-    templates := A_Args.Length >= 2 ? A_Args[2] : A_ScriptDir "\..\templates"
-    scoresFile := A_Args.Length >= 3 ? A_Args[3] : ""
+    folder := A_Args.Length >= 1 ? StartPath(A_Args[1]) : A_ScriptDir "\..\build\fixtures"
+    templates := A_Args.Length >= 2 ? StartPath(A_Args[2]) : A_ScriptDir "\..\templates"
+    scoresFile := A_Args.Length >= 3 ? StartPath(A_Args[3]) : ""
     crops := Buttons.Load(templates)
     missing := Buttons.Missing(crops)
     if missing.Length {

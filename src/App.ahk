@@ -152,6 +152,10 @@ QuoteArg(arg) {
     return out '"'
 }
 
+; A path given on the command line. AutoHotkey starts a script in the script's
+; own folder, so a relative path is taken from the folder it was started from.
+StartPath(path) => path = "" || RegExMatch(path, "^([A-Za-z]:|\\)") ? path : A_InitialWorkingDir "\" path
+
 ; Joins an array's items with ``sep``.
 JoinList(items, sep := ", ") {
     out := ""
