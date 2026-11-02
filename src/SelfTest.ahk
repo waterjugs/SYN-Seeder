@@ -23,6 +23,7 @@ class SelfTest {
             ["daily task", () => SelfTest.Task(check)],
             ["shrinking", () => SelfTest.Shrinking(check)],
             ["button images", () => SelfTest.ButtonImages(check, note)],
+            ["fonts", () => SelfTest.Fonts(check)],
             ["screen", () => SelfTest.Screen(note)],
             ["server", () => SelfTest.Server(note)],
             ["release", () => SelfTest.Release(note)]]
@@ -136,6 +137,15 @@ class SelfTest {
                     bad.Push(fileName)
             check("downloaded button images match", !bad.Length, JoinList(bad))
         }
+    }
+
+    ; The window's fonts: downloaded and checked like the button images in a
+    ; built exe, and usable once loaded.
+    static Fonts(check) {
+        loaded := Look.LoadFonts()
+        check("fonts", loaded = FontFiles.SHA256.Count, loaded " of " FontFiles.SHA256.Count " loaded")
+        for face in ["Inter", "Barlow Condensed SemiBold"]
+            check("font " face, Font(face, 10).actualFace = face)
     }
 
     static Screen(note) {
