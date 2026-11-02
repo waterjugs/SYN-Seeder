@@ -7,10 +7,9 @@
 ; (roles_confirm.title.png) is a crop of a different part of the same screen.
 ;
 ; Each capture is shrunk once (GameScreen.Shrink) to a working copy about 720
-; pixels high: by a whole factor f = round(height / 720), which averages every
-; f x f block of pixels, or, for captures from 721 to 1079 pixels high, to
-; exactly 720 high, averaging the pixels each working pixel covers. A button
-; is only looked for around the spots where the game draws it. Spots are
+; pixels high, by a whole factor f = round(height / 720) that averages every
+; f x f block of pixels. A button is only looked for around the spots where
+; the game draws it. Spots are
 ; fractions of the game's menu area: the whole screen at 16:9, and a 16:9 area
 ; in the middle of wider screens, where the game keeps its menus at the size a
 ; 16:9 screen of that height gets. Screens narrower than 16:9 haven't been
@@ -138,24 +137,18 @@ class Vision {
         return layouts
     }
 
-    ; How much a capture this tall is shrunk: by a whole factor, except from
-    ; 721 to 1079 pixels high, which are shrunk to exactly 720 high (a factor
-    ; between 1 and 1.5). Left at full size there, the game's text differs
-    ; too much from the button images, and matching is slow.
-    static Factor(height) {
-        if height > Vision.WORK_TARGET && height < 1.5 * Vision.WORK_TARGET
-            return height / Vision.WORK_TARGET
-        return Max(1, RoundHalfEven(height / Vision.WORK_TARGET))
-    }
+    ; How much a capture this tall is shrunk: by a whole factor, so that each
+    ; working pixel is the exact average of an f x f block, as the screenshot
+    ; cases are made. (Windows' scaler only averages exactly for whole factors:
+    ; the self-test found it up to 53 levels off at 1.5.) From 721 to 1079
+    ; pixels high that's 1: the capture is used as it is.
+    static Factor(height) => Max(1, RoundHalfEven(height / Vision.WORK_TARGET))
 
-    ; The working copy of a ``w`` x ``h`` capture: [width, height, factor].
-    ; With a whole factor f, it covers the capture's top left
-    ; (width * f) x (height * f) pixels; otherwise the whole capture.
+    ; The working copy of a ``w`` x ``h`` capture: [width, height, factor]. It
+    ; covers the capture's top left (width * f) x (height * f) pixels.
     static WorkSize(w, h) {
         f := Vision.Factor(h)
-        if f is Integer
-            return [Max(1, w // f), Max(1, h // f), f]
-        return [Max(1, Round(w * Vision.WORK_TARGET / h)), Vision.WORK_TARGET, f]
+        return [Max(1, w // f), Max(1, h // f), f]
     }
 
     ; The score that counts as finding ``name``.

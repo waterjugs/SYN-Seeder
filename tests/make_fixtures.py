@@ -6,15 +6,14 @@
 Each case is a screenshot from tests/screens, resized or padded to a screen
 size the way a player would see it (or might, on a screen narrower than
 16:9), then shrunk to the app's working copy (by
-the whole factor round(height / 720), averaging f x f blocks, or to exactly
-720 high for screens from 721 to 1079 high), and saved as an 8-bit gray PNG.
+the whole factor round(height / 720), averaging f x f blocks), and saved as
+an 8-bit gray PNG.
 cases.json says what the app should see on each one.
 """
 
 from __future__ import annotations
 
 import json
-import math
 import sys
 from pathlib import Path
 
@@ -156,22 +155,18 @@ def narrow(name: str, kind: str, size: tuple[int, int]) -> np.ndarray:
     return gray[:, left: left + w].copy()
 
 
-def factor(height: int) -> float:
-    """How much the app shrinks a capture this tall (Vision.Factor)."""
-    if 720 < height < 1080:
-        return height / 720
+def factor(height: int) -> int:
+    """How much the app shrinks a capture this tall (Vision.Factor): Python's
+    round() rounds halves to even, as the app's RoundHalfEven does."""
     return max(1, round(height / 720))
 
 
-def shrink(gray: np.ndarray, f: float) -> np.ndarray:
+def shrink(gray: np.ndarray, f: int) -> np.ndarray:
     """The app's working copy (Vision.WorkSize, GameScreen.Shrink): each f x f
-    block averaged, rounding half up, for a whole factor; otherwise each pixel
-    the average of the pixels it covers, at exactly 720 high."""
+    block averaged, rounding half up."""
     if f == 1:
         return gray
     h, w = gray.shape
-    if not isinstance(f, int):
-        return cv2.resize(gray, (max(1, math.floor(w * 720 / h + 0.5)), 720), interpolation=cv2.INTER_AREA)
     blocks = gray[: h // f * f, : w // f * f].astype(np.int64).reshape(h // f, f, w // f, f).sum(axis=(1, 3))
     return ((blocks + f * f // 2) // (f * f)).astype(np.uint8)
 
