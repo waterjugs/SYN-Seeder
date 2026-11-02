@@ -66,10 +66,7 @@ class FakeScreen {
 
     Find(name, region := "") => this.visible.Has(name) ? [name, 0] : ""
 
-    FindAll(name, region := "") {
-        pos := this.Find(name, region)
-        return pos ? [pos] : []
-    }
+    JoinOnRow(row) => this.Find("browser_join")
 
     Click(pos) {
         name := pos[1]
@@ -100,6 +97,7 @@ class FakeGame {
         this.isRunning := running
         this.launchOk := launchOk
         this.launches := 0
+        this.launchPending := false
         this.closes := 0
         this.lingered := ""
         this.focused := true

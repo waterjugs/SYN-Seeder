@@ -38,11 +38,15 @@ CurrentScreen(finder) {
 
 Within(value, range) => range[1] <= value && value <= range[2]
 
-RunCheck(finder, crops, check, frame) {
+; A position on screen as a position on the screenshot, which a case can put
+; somewhere other than the screen's top left corner (``at``).
+OnShot(pos, at) => pos ? [pos[1] - at[1], pos[2] - at[2]] : ""
+
+RunCheck(finder, crops, check, frame, at) {
     if check.Has("find") {
         name := check["find"]
         region := check.Has("region") ? check["region"] : ""
-        pos := finder.Find(name, region)
+        pos := OnShot(finder.Find(name, region), at)
         if check.Has("missing")
             return pos ? name " found at " pos[1] "," pos[2] " but shouldn't be" : ""
         if !pos
@@ -53,15 +57,16 @@ RunCheck(finder, crops, check, frame) {
             return name " y " pos[2] " outside " Round(check["y"][1], 1) "-" Round(check["y"][2], 1)
         return ""
     }
-    if check.Has("join_on_row") {
+    if check.Has("join_on_row") {  ; the JOIN the app clicks (Flow.OnServerRow)
         row := finder.Find("server_row")
-        joins := finder.FindAll("browser_join")
-        if !row || !joins.Length
-            return "server row " (row ? "found" : "missing") ", " joins.Length " JOIN buttons"
-        join := joins[1]
-        for j in joins
-            if Abs(j[2] - row[2]) < Abs(join[2] - row[2])
-                join := j
+        join := OnShot(row ? finder.JoinOnRow(row) : "", at)
+        row := OnShot(row, at)
+        if check.Has("none")  ; the server's row has no JOIN to click
+            return !row ? "server row missing" : join ? "clicked a JOIN at " join[1] "," join[2]
+                . " for the row at " row[1] "," row[2] ", which has none" : ""
+        if !join
+            return "server row " (row ? "found at " row[1] "," row[2] : "missing") ", "
+                . finder.FindAll("browser_join").Length " JOIN buttons, none on its row"
         if check.Has("row_x") && !Within(row[1], check["row_x"])
             return "row x " row[1]
         if check.Has("row_y") && !Within(row[2], check["row_y"])
@@ -85,7 +90,7 @@ RunCheck(finder, crops, check, frame) {
         if !only[name].Length
             return "no " name "." check["only_cut"] "p.png"
         alone := Vision(only)
-        alone.SetFrame(frame.buf.Ptr, frame.w, frame.h, frame.stride, finder.W, finder.H, finder.f)
+        alone.SetFrame(frame.buf.Ptr, frame.w, frame.h, frame.stride, finder.W, finder.H, finder.f, at[1], at[2])
         return alone.Find(name) ? "" : name "." check["only_cut"] "p.png alone doesn't find it"
     }
     if check.Has("count") {
@@ -110,8 +115,10 @@ Main() {
     DllCall("QueryPerformanceFrequency", "Int64*", &freq := 0)
     for item in cases {
         frame := Gdip.LoadBits(folder "\" StrReplace(item["file"], "/", "\"))
+        at := [item.Has("left") ? item["left"] : 0, item.Has("top") ? item["top"] : 0]
         finder := Vision(crops)
-        finder.SetFrame(frame.buf.Ptr, frame.w, frame.h, frame.stride, item["width"], item["height"], item["factor"])
+        finder.SetFrame(frame.buf.Ptr, frame.w, frame.h, frame.stride, item["width"], item["height"], item["factor"],
+            at[1], at[2])
         CurrentScreen(finder)  ; the first look also prepares the button images; time the next
         DllCall("QueryPerformanceCounter", "Int64*", &t0 := 0)
         screen := CurrentScreen(finder)
@@ -127,7 +134,7 @@ Main() {
         if screen != want
             problems.Push("saw " (screen = "" ? "nothing" : screen) ", expected " (want = "" ? "nothing" : want))
         for check in item["checks"] {
-            problem := RunCheck(finder, crops, check, frame)
+            problem := RunCheck(finder, crops, check, frame, at)
             if problem != ""
                 problems.Push(problem)
         }

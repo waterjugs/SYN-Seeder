@@ -23,6 +23,9 @@ class HllGame {
         this.lateClock := lateClock ? lateClock : SeedClock()
         this.focusWait := ""     ; why the game isn't in front, once logged
         this.altTapped := false  ; ForceToFront's Alt tap, used once per wait
+        ; True from a launch that timed out until the next one: the launcher
+        ; can still start the game (see Runner.Seed).
+        this.launchPending := false
     }
 
     static EpicManifest {
@@ -141,13 +144,14 @@ class HllGame {
     ; Asks Steam or Epic to start the game.
     static Start(uri) => Run(uri)
 
-    ; Starts the game and waits for its window. False on timeout. A stop
-    ; asked for before the game shows up still closes it if it starts within
-    ; LATE_START_SECONDS.
+    ; Starts the game and waits for its window. False on timeout, and then
+    ; launchPending is set. A stop asked for before the game shows up still
+    ; closes it if it starts within LATE_START_SECONDS.
     Launch(timeout := "") {
         uri := this.LaunchUri()
         this.clock.Check()  ; already asked to stop: don't start it
         Logs.Info("Launching the game via " uri)
+        this.launchPending := false  ; this launch's own wait covers the last one's
         HllGame.Start(uri)
         timeout := timeout = "" ? this.config.launch_timeout : timeout
         deadline := this.clock.Now() + timeout
@@ -158,7 +162,7 @@ class HllGame {
                 this.clock.Sleep(2)
             }
         } catch SeedStopped as stop {
-            this.CloseLateStart(Min(HllGame.LATE_START_SECONDS, Max(deadline - this.clock.Now(), 0)))
+            this.CloseLateStart(HllGame.LATE_START_SECONDS)  ; the launcher can still start it after the timeout
             throw stop
         }
         names := Map()
@@ -170,6 +174,7 @@ class HllGame {
             list.Push(name)
         Logs.Error("The game window didn't appear within " Round(timeout) "s (HLL programs with a window: "
             . (list.Length ? JoinList(list) : "none") ")")
+        this.launchPending := true
         return false
     }
 

@@ -237,7 +237,7 @@ class Updater {
         Logs.Warning("Couldn't replace " target " yet; something has it open, maybe a SynSeeder window "
             . "started from it. Trying again every " Updater.RETRY_SECONDS " s during this run.")
         retry() {
-            if Updater.Replace(temp, target, 1, 0)
+            if !FileExist(temp) || Updater.Replace(temp, target, 1, 0)  ; installed, or nothing left to install
                 SetTimer(retry, 0)
         }
         Updater.retrying := retry

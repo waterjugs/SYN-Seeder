@@ -26,6 +26,7 @@ class SetupWindow {
         this.spawned := 0         ; the run Seed now started
         this.busy := false        ; Stop seeding is waiting for runs to end
         this.lateWatch := ""      ; after a stop that had to end a run: the timer watching for a late game
+        this.exitAfterWatch := false  ; the window was closed during that watch: exit when it ends
         this.request := ""        ; the player-count request in flight
         this.requestAt := 0
         this.picker := ""         ; the open hour or minute grid
@@ -73,6 +74,7 @@ class SetupWindow {
         g.BackColor := Look.Hex(Look.TWILIGHT)
         g.MarginX := 0, g.MarginY := 0
         g.OnEvent("Close", (*) => this.Close())
+        g.OnEvent("Size", (gui, minMax, *) => minMax = 0 ? this._FitWindow() : "")  ; e.g. restored
         g.OnEvent("Escape", (*) => this.ClosePicker())
         W := this.width := px(Look.HEADER_W), M := px(24), CW := this.contentWidth := W - 2 * M, pad := px(2)
         line := Max(1, px(1))
@@ -287,9 +289,21 @@ class SetupWindow {
         }
         this.statusLine.Move(, , , need)
         this.statusH := need, this.height += delta
-        if DllCall("IsWindowVisible", "Ptr", this.gui.Hwnd) {
+        this._FitWindow()
+    }
+
+    ; Makes the window this.height tall inside. Not while it's hidden (Show
+    ; sizes it) or minimized: there Windows would size the minimized window and
+    ; restore the old size, so the Size event does it once it's restored.
+    _FitWindow() {
+        hwnd := this.gui.Hwnd
+        if !DllCall("IsWindowVisible", "Ptr", hwnd) || DllCall("IsIconic", "Ptr", hwnd)
+            return
+        rect := Buffer(16, 0)
+        DllCall("GetClientRect", "Ptr", hwnd, "Ptr", rect)
+        if (inner := NumGet(rect, 12, "Int")) != this.height {
             this.gui.GetPos(, , , &outer)
-            this.gui.Move(, , , outer + delta)
+            this.gui.Move(, , , outer + this.height - inner)
         }
     }
 
@@ -409,7 +423,6 @@ class SetupWindow {
     _SeedNow() {
         if this.busy
             return
-        this.StopLateWatch()  ; it would close the game this run starts
         if SeedLock.Running() || (this.spawned && SeedLock.Alive(this.spawned)) {
             this.Status("Already seeding.")
             return
@@ -431,6 +444,7 @@ class SetupWindow {
             this.Status("Couldn't start seeding: " err.Message, Look.FLARE)
             return
         }
+        this.StopLateWatch()  ; the game is this run's to open now
         this.seeding := true
         this.Status("Seeding started. The game will open shortly; leave the mouse and keyboard alone while it joins.")
     }
@@ -546,11 +560,16 @@ class SetupWindow {
     }
 
     ; For ``seconds`` after a stop that had to end a run, closes the game if
-    ; the launcher still starts it. Seed now cancels it.
+    ; the launcher still starts it. A new run (Seed now, the schedule, another
+    ; window) owns the game, so it ends the watch.
     WatchLateGame(seconds) {
         this.StopLateWatch()
         endAt := A_TickCount + seconds * 1000
         check() {
+            if SeedLock.Running() {
+                this.StopLateWatch()
+                return
+            }
             if pid := HllGame(this.config).Pid() {
                 HllGame._End(pid)
                 this.StopLateWatch()
@@ -567,6 +586,8 @@ class SetupWindow {
         if this.lateWatch
             SetTimer(this.lateWatch, 0)
         this.lateWatch := ""
+        if this.exitAfterWatch
+            this.Exit()
     }
 
     ChooseLauncher(which) {
@@ -593,14 +614,24 @@ class SetupWindow {
         try Run(url)
     }
 
+    ; Closing the window ends SynSeeder, unless it's watching for a late game:
+    ; then the window goes, and SynSeeder ends when the watch does.
     Close() {
         this.ClosePicker()
-        ExitApp(0)
+        if this.lateWatch {
+            this.exitAfterWatch := true
+            this.gui.Hide()
+            return
+        }
+        this.Exit()
     }
+
+    Exit() => ExitApp(0)
 
     ; Stops the timers and closes the window without exiting (tests).
     Dispose() {
         SetTimer(this.pollTimer, 0)
+        this.exitAfterWatch := false
         this.StopLateWatch()
         this.ClosePicker()
         for ctrl in this.gui

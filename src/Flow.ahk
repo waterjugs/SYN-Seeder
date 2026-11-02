@@ -300,16 +300,10 @@ class Navigator {
     }
 
     OnServerRow() {
-        row := this.screen.Find("server_row")
-        joins := this.screen.FindAll("browser_join")
-        if !row || !joins.Length
-            return
-        ; The JOIN button on the same row as the server's name.
-        join := joins[1]
-        for pos in joins
-            if Abs(pos[2] - row[2]) < Abs(join[2] - row[2])
-                join := pos
-        this.screen.Click(join)
+        ; The JOIN button on the same row as the server's name, never another
+        ; server's; if it isn't found, the next look tries again.
+        if (row := this.screen.Find("server_row")) && (join := this.screen.JoinOnRow(row))
+            this.screen.Click(join)
     }
 
     OnBrowserSearch() {

@@ -26,9 +26,9 @@ class GameScreen {
     ; The primary monitor: {left, top, w, h}.
     static Primary() => {left: 0, top: 0, w: A_ScreenWidth, h: A_ScreenHeight}
 
-    ; Takes a new screenshot; Find and FindAll use it until the next refresh.
+    ; Takes a new screenshot; Find and JoinOnRow use it until the next refresh.
     ; False if the screen couldn't be read (the PC is locked, or a UAC prompt
-    ; is up); then Find and FindAll keep using the last one.
+    ; is up); then they keep using the last one.
     Refresh() {
         rect := this.rect ? (this.rect)() : ""
         this.area := rect ? {left: rect[1], top: rect[2], w: rect[3], h: rect[4]} : GameScreen.Primary()
@@ -64,10 +64,11 @@ class GameScreen {
         return this.vision.Find(name, region)
     }
 
-    FindAll(name, region := "") {
+    ; The JOIN button on the server browser row at ``row``, or "" (Vision.JoinOnRow).
+    JoinOnRow(row) {
         if !this.vision.ready && !this.Refresh()
-            return []
-        return this.vision.FindAll(name, region)
+            return ""
+        return this.vision.JoinOnRow(row)
     }
 
     ; Acting

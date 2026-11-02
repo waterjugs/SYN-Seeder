@@ -188,10 +188,17 @@ class Vision {
         if name = "server_row" && !this.Hits("browser_refresh").Length
             return []
         threshold := Vision.ThresholdFor(name)
+        ; Screens narrower than 16:9 have more than one likely layout: use the
+        ; one the button fits best. (A button found in the wrong one is at the
+        ; wrong size, so it scores less, and its row can be another row.)
+        found := [], top := -1.0
         for layout in this.layouts {
-            found := this.SpotHits(name, this.SpotsPx(name, region, layout), threshold, false, layout.h / this.H)
-            if found.Length
-                break
+            hits := this.SpotHits(name, this.SpotsPx(name, region, layout), threshold, false, layout.h / this.H)
+            best := -1.0
+            for hit in hits
+                best := Max(best, hit[1])
+            if hits.Length && best > top
+                found := hits, top := best
         }
         ; best first, equal scores keeping their order; a hit next to a better
         ; one is the same button seen from another spot
@@ -210,6 +217,25 @@ class Vision {
             out.Push(hit)
         }
         return out
+    }
+
+    ; The JOIN button on the same row of the server browser as ``row`` (where
+    ; server_row was found, on screen), as [x, y] on screen, or "" if it isn't
+    ; there. It's looked for only at that row's height, so it's never another
+    ; server's JOIN.
+    JoinOnRow(row) {
+        if !this.ready
+            throw Error("No screen to look at yet")
+        join := Vision.SPOTS["browser_join"][1], name := Vision.SPOTS["server_row"][1]
+        f := this.f, y := row[2] - this.top, best := ""
+        for layout in this.layouts {  ; the layout it fits best (see Hits)
+            spot := [(layout.left + join[1] * layout.w) / f, (y + (join[2] - name[2]) * layout.h) / f,
+                Ceil((join[3] * layout.w + layout.padX) / f), Ceil(join[4] * layout.h / f)]
+            hits := this.SpotHits("browser_join", [spot], Vision.ThresholdFor("browser_join"), false, layout.h / this.H)
+            if hits.Length && (!best || hits[1][1] > best[1])
+                best := hits[1]
+        }
+        return best ? this.ToScreen(best) : ""
     }
 
     ; The spots to look at in ``layout`` (one of this.layouts; the first if

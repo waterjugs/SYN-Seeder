@@ -227,9 +227,13 @@ class WinApi {
             return DllCall("MapVirtualKeyExW", "UInt", WinApi.VK[key], "UInt", 0, "Ptr", 0, "UInt")
         thread := DllCall("GetWindowThreadProcessId", "Ptr", DllCall("GetForegroundWindow", "Ptr"), "Ptr", 0, "UInt")
         layout := DllCall("GetKeyboardLayout", "UInt", thread, "Ptr")
-        vk := WinApi.KeyFor(key, DllCall("VkKeyScanExW", "UShort", Ord(key), "Ptr", layout, "Short"))
+        vk := WinApi.KeyFor(key, WinApi.VkScan(key, layout))
         return DllCall("MapVirtualKeyExW", "UInt", vk, "UInt", 0, "Ptr", layout, "UInt")  ; MAPVK_VK_TO_VSC
     }
+
+    ; The key (and Shift state) that types ``key`` on keyboard ``layout``, or
+    ; -1 if none does (WinApi's, so tests can swap it).
+    static VkScan(key, layout) => DllCall("VkKeyScanExW", "UShort", Ord(key), "Ptr", layout, "Short")
 
     ; The virtual key to press for ``key``, given what VkKeyScanExW says types
     ; it on the game's layout. When no key types a letter on its own (-1 on

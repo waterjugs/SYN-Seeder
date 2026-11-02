@@ -363,6 +363,22 @@ class MiscTests {
         AssertEq(tries.Length, 6)
     }
 
+    ; In a built exe the window waits FONT_WAIT seconds for fonts and, once
+    ; that has failed, leaves GitHub alone; a seeding run has time to wait.
+    static Test_built_exe_window_and_run_get_fonts_their_own_way() {
+        Patches.Value(App, "Built", true)
+        Patches.Value(Look, "FontFolder", App.Dir "\fonts")
+        tries := []
+        Patches.Set(RepoFiles, "FetchAtOnce", (this, dir, files, ref, path, what, wait) => (DirCreate(dir), tries.Push(wait), ["Inter.ttf"]))
+        AssertEq(Look.LoadFonts(), 0)  ; the window, offline
+        AssertEq(Look.LoadFonts(), 0)  ; opened again soon after
+        AssertEq(tries, [Look.FONT_WAIT])
+        Patches.Value(Buttons, "Folder", A_ScriptDir "\..\templates")
+        Patches.Set(Buttons, "Fetch", (*) => [])
+        LoadButtons()  ; a seeding run
+        AssertEq(tries, [Look.FONT_WAIT, 30])
+    }
+
     static Test_button_file_names() {
         info := Buttons.Parse("server_row.1080p.png")
         AssertEq([info.name, info.cut, info.tag], ["server_row", 1080, ""])
