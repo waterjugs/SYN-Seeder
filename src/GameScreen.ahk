@@ -134,8 +134,7 @@ class GameScreen {
         }
         if f = 1
             return GameScreen._Copy(this.dib.dc, w, h, this.area) ? this.dib : ""
-        ; whole f x f blocks for a whole factor, else the whole area
-        sw := f is Integer ? w * f : this.area.w, sh := f is Integer ? h * f : this.area.h
+        sw := w * f, sh := h * f  ; whole f x f blocks
         if !this.full || this.full.w != sw || this.full.h != sh {
             if this.full
                 GameScreen._FreeDibOf(this.full)
@@ -169,10 +168,11 @@ class GameScreen {
 
     static shrinkWarned := false
 
-    ; Shrinks the bitmap ``src`` into the smaller ``dst``, making each pixel the
-    ; average of the pixels it covers (an f x f block for a whole factor f), as
-    ; the screenshot cases the button finder is tested on are made. Windows
-    ; Imaging Component's Fant scaler does that. If it can't, GDI's HALFTONE
+    ; Shrinks the bitmap ``src`` into ``dst``, a whole number of times smaller,
+    ; making each pixel the average of the f x f block it covers, as the
+    ; screenshot cases the button finder is tested on are made. Windows
+    ; Imaging Component's Fant scaler does that exactly for a whole factor
+    ; (not for others: see Vision.Factor). If it can't, GDI's HALFTONE
     ; stretch does a rougher job (on Windows its pixels stray from the block
     ; averages by up to about 60 levels). Returns which of the two did it.
     static Shrink(src, dst) {

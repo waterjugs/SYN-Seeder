@@ -72,21 +72,19 @@ class SelfTest {
     }
 
     ; The button finder expects each working pixel to be the rounded average of
-    ; the screen pixels it covers, as its screenshot cases are made
-    ; (GameScreen.Shrink): an f x f block for a whole factor f, and a weighted
-    ; average for the captures from 721 to 1079 pixels high that are shrunk to
-    ; 720 high.
+    ; the f x f block of screen pixels it covers, as its screenshot cases are
+    ; made (GameScreen.Shrink).
     static Shrinking(check, note) {
-        for size in [[96, 60, 48, 30], [96, 60, 32, 20], [96, 60, 24, 15], [96, 60, 64, 40], [150, 107, 101, 72]] {
+        for size in [[96, 60, 48, 30], [96, 60, 32, 20], [96, 60, 24, 15], [150, 108, 50, 36]] {
             result := SelfTest.ShrinkError(size*)
             check("screen shrink from " size[1] "x" size[2] " to " size[3] "x" size[4] " averages", result.max <= 2,
                 "largest difference " result.max ", average " Round(result.mean, 3) ", by " result.how)
         }
-        ; How long big screens take: 5120x2160 shrinks by 3, 1920x1079 to 720 high.
+        ; How long big screens take: 5120x2160 and 3840x2160 shrink by 3.
         DllCall("QueryPerformanceFrequency", "Int64*", &freq := 0)
-        for size in [[5120, 2160], [1920, 1079]] {
+        for size in [[5120, 2160], [3840, 2160]] {
             work := Vision.WorkSize(size*)
-            src := GameScreen._MakeDib(work[3] is Integer ? work[1] * work[3] : size[1], work[3] is Integer ? work[2] * work[3] : size[2])
+            src := GameScreen._MakeDib(work[1] * work[3], work[2] * work[3])
             dst := GameScreen._MakeDib(work[1], work[2])
             try {
                 DllCall("QueryPerformanceCounter", "Int64*", &t0 := 0)
@@ -100,8 +98,8 @@ class SelfTest {
         }
     }
 
-    ; How far the app's shrink from w x h to dw x dh strays from the averages
-    ; it should give, on a test pattern.
+    ; How far the app's shrink from w x h to dw x dh (a whole number of times
+    ; smaller) strays from the block averages it should give, on a test pattern.
     static ShrinkError(w, h, dw, dh) {
         src := GameScreen._MakeDib(w, h)
         dst := GameScreen._MakeDib(dw, dh)
@@ -115,34 +113,21 @@ class SelfTest {
                 NumPut("UInt", pixel, src.bits, i * 4)
             }
             how := GameScreen.Shrink(src, dst)
-            f := w // dw, whole := w = dw * f && h = dh * f
-            ; for each pixel along an axis: [first source pixel, [weights...]]
-            wy := Vision._AxisWeights(h, dh), wx := Vision._AxisWeights(w, dw)
+            f := w // dw
             worst := 0, total := 0, count := 0
-            for oy, rows in wy {
-                for ox, cols in wx {
-                    got := NumGet(dst.bits, ((oy - 1) * dw + ox - 1) * 4, "UInt")
+            loop dh {
+                oy := A_Index - 1
+                loop dw {
+                    ox := A_Index - 1
+                    got := NumGet(dst.bits, (oy * dw + ox) * 4, "UInt")
                     loop 3 {
-                        shift := (A_Index - 1) * 8
-                        if whole {  ; exactly, in whole numbers
-                            sum := 0
-                            loop f {
-                                yy := (oy - 1) * f + A_Index - 1
-                                loop f
-                                    sum += NumGet(src.bits, (yy * w + (ox - 1) * f + A_Index - 1) * 4, "UInt") >> shift & 255
-                            }
-                            want := (sum + f * f // 2) // (f * f)
-                        } else {
-                            sum := 0.0
-                            for j, wy1 in rows[2] {
-                                line := 0.0, at := (rows[1] + j - 1) * w + cols[1]
-                                for i, wx1 in cols[2]
-                                    line += wx1 * (NumGet(src.bits, (at + i - 1) * 4, "UInt") >> shift & 255)
-                                sum += wy1 * line
-                            }
-                            want := Floor(sum + 0.5)
+                        shift := (A_Index - 1) * 8, sum := 0
+                        loop f {
+                            yy := oy * f + A_Index - 1
+                            loop f
+                                sum += NumGet(src.bits, (yy * w + ox * f + A_Index - 1) * 4, "UInt") >> shift & 255
                         }
-                        diff := Abs((got >> shift & 255) - want)
+                        diff := Abs((got >> shift & 255) - (sum + f * f // 2) // (f * f))
                         worst := Max(worst, diff), total += diff, count++
                     }
                 }
