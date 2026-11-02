@@ -41,24 +41,26 @@ Using SynSeeder means agreeing to the [Terms of Service](TERMS.md). Steam's
 rules don't allow bots, so any risk to your account is yours. See the
 [Privacy Policy](PRIVACY.md) for what's stored and sent.
 
-Tested on game v1.7, Steam and Epic, at 1920x1080, 2560x1440, 3840x2160,
-2560x1080, 3440x1440 and 5120x2160.
+Made for game v1.7 on Steam and Epic. Its button finder is tested on
+screenshots at 1920x1080, 2560x1440, 3840x2160, 2560x1080, 3440x1440 and
+5120x2160.
 
 ## For developers
 
+SynSeeder is an [AutoHotkey](https://www.autohotkey.com/) v2.0.18 script.
+
 ```
-pip install -r requirements-dev.txt
-python -m pytest
-python -m seeder --seed      # run a seeding session now (Windows)
-python -m seeder --record    # screenshot every 3s, for making templates
-python tools/crop_templates.py <dir>   # re-cut templates after a game patch
-python tools/make_assets.py  # redraw the window's images and the icon (needs Pillow)
-build.bat                    # makes dist\SynSeeder.exe
+AutoHotkey64.exe SynSeeder.ahk             # the window (--seed seeds now)
+AutoHotkey64.exe SynSeeder.ahk --record    # screenshots, for making button images
+AutoHotkey64.exe /ErrorStdOut tests\run_tests.ahk
+python tests/make_fixtures.py build/fixtures   # needs opencv-python-headless
+AutoHotkey64.exe /ErrorStdOut tests\vision_cases.ahk build\fixtures
+python tools/crop_templates.py <dir>       # re-cut button images after a game patch
 ```
 
-Pushing a tag like `v1.0.1` builds a draft release. Scan its exe on
-VirusTotal, then press **Publish** on GitHub; installed copies update only
-after that. Set `__version__` in `seeder/__init__.py` to match the tag
-first, or the build fails. Settings live in
-`%APPDATA%\SynSeeder\config.json`, including `leave_delay_minutes` and
-`auto_update`.
+GitHub builds and tests every push. A tag like `v1.1.1` makes a draft
+release and scans its exe on VirusTotal; installed copies update only once
+it's published. Bump the version in `src/App.ahk` and `SynSeeder.ahk` first.
+The exe downloads its button images and fonts from this repository and
+checks them against `src/ButtonFiles.ahk` and `src/FontFiles.ahk`. Settings
+live in `%APPDATA%\SynSeeder\config.json`.
