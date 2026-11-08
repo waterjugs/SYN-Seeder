@@ -1,5 +1,7 @@
 ; Opens the setup window, puts it in a given state and saves a picture of
 ; it, to check the look (CI keeps the pictures). Nothing is saved or scheduled.
+; Exits with 3 if the seedling isn't whole or any drawing failed: in a new
+; process, as here, the window is the first thing SynSeeder draws.
 ;
 ;   AutoHotkey64.exe tests\window_shot.ahk OUT.png [players, or none] [grid]
 #Requires AutoHotkey v2.0
@@ -26,6 +28,7 @@
 #Include ..\src\FontFiles.ahk
 #Include ..\src\Look.ahk
 #Include ..\src\SetupWindow.ahk
+#Include Seedling.ahk
 
 OnError(Crashed)
 Crashed(err, mode) {
@@ -57,4 +60,11 @@ DllCall("BitBlt", "Ptr", shot.dc, "Int", 0, "Int", 0, "Int", cw, "Int", h, "Ptr"
 DllCall("ReleaseDC", "Ptr", 0, "Ptr", screen)
 shot.Save(out)
 FileAppend("saved " out " (" cw "x" ch ", fonts " w.fonts.body.actualFace " / " w.fonts.title.actualFace ")`n", "*", "UTF-8")
+problems := SeedlingCheck.Problems(w.header)
+for failure in Canvas.failures
+    problems.Push(failure)
+if problems.Length {
+    FileAppend("FAIL: " JoinList(problems, "; ") "`n", "*", "UTF-8")
+    ExitApp(3)
+}
 ExitApp(0)

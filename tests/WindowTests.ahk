@@ -117,14 +117,38 @@ class WindowTests {
     }
 
     static Test_header_is_dusk_over_first_light() {
+        Canvas.failures := []
         pic := Canvas(480, 92)
         Paint.Header(pic, Font("Tahoma", 0, 0, false, 36))
         AssertEq(Look.Hex(pic.Pixel(3, 0)), "0C1823", "night at the top")
         AssertEq(Look.Hex(pic.Pixel(3, 91)), Look.Hex(Look.FIRST_LIGHT), "first light at the bottom")
-        green := 0
-        loop 100
-            green += pic.Pixel(40 + A_Index, 40) = Look.SPROUT_GREEN
-        Assert(green, "no seedling")
+        AssertEq(SeedlingCheck.Problems(pic), [], "seedling")
+        AssertEq(Canvas.failures, [], "drawing")
+    }
+
+    static Test_seedling_check_sees_a_missing_stem() {
+        pic := Canvas(480, 92)
+        Paint.Header(pic, Font("Tahoma", 0, 0, false, 36))
+        sky := pic.Pixel(3, 46)
+        s := Look.scale, u := Look.MARK_UNIT * s
+        pic.Rect(0, Look.MARK_Y * s + 35 * u, 240, 21 * u, sky)  ; paints over the stem, as 1.0.0 left it
+        problems := SeedlingCheck.Problems(pic)
+        AssertEq(problems.Length, 1, JoinList(problems, "; "))
+        Assert(InStr(problems[1], "no stem"), problems[1])
+        pic.Rect(0, 0, 240, Look.MARK_Y * s + 35 * u, sky)  ; and over the leaves
+        AssertEq(SeedlingCheck.Problems(pic).Length, 2)
+    }
+
+    static Test_failed_drawing_is_kept_for_the_checks() {
+        Canvas.failures := []
+        Canvas.Checked(0, "GdipFillPolygon")
+        AssertEq(Canvas.failures, [])
+        Canvas.Checked(18, "GdipCreateSolidFill")
+        AssertEq(Canvas.failures, ["GdipCreateSolidFill (GDI+ status 18)"])
+        loop 30
+            Canvas.Checked(2, "GdipFillPolygon")
+        AssertEq(Canvas.failures.Length, 20, "only the first 20")
+        Canvas.failures := []
     }
 
     static Test_player_count_is_fetched_without_waiting() {

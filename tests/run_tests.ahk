@@ -32,6 +32,7 @@
 #Include ..\src\SelfTest.ahk
 #Include ..\src\Commands.ahk
 #Include Fakes.ahk
+#Include Seedling.ahk
 #Include RunnerTests.ahk
 #Include GameTests.ahk
 #Include MiscTests.ahk
