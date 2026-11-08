@@ -7,6 +7,7 @@ name: build
 
 on:
   push:
+    branches-ignore: ["check/rescan-*"]  # throwaway branch: no build needed
   workflow_dispatch:
 
 permissions:
