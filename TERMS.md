@@ -1,11 +1,14 @@
 # SynSeeder Terms of Service
 
-Last updated: 2 November 2026
+Last updated: 8 November 2026
+
+**New in version 1.1.0:** an optional **Seed when pinged** setting and a SynSeeder bot for Discord. That version won't come out before 22 November 2026. The parts of these terms about them apply only from version 1.1.0 on.
 
 SynSeeder is a free, unofficial tool that plays Hell Let Loose: Vietnam for you so a community server fills up. By running it, you agree to these terms. The short version:
 
 - It's provided as is, with no promise that it works or keeps working after a game update.
 - While it runs, it controls your mouse and keyboard in the game and opens and closes the game by itself.
+- If you tick **Seed when pinged**, other people can start a run on your PC from Discord, up to 3 times a day, during the hours you set. It starts by itself only if you haven't touched the mouse or keyboard for 5 minutes and nothing is full screen; otherwise it asks first. A run can go on after your hours end.
 - Before each run it checks GitHub for a newer version and installs it, unless you turn this off. An update can change what the app does.
 - Steam's rules ban automated play like this, and Epic's and the game's rules may too. If your account is warned, suspended or banned, that risk is yours.
 - Don't use it to cheat, get around anti-cheat, or run accounts the rules don't allow.
@@ -14,7 +17,7 @@ The full terms below are what count; this summary is only a guide to them.
 
 ## 1. Who we are and agreeing to these terms
 
-These terms are an agreement between you and the GitHub user waterjugs ("we", "us"), who makes SynSeeder ("the app"). By running SynSeeder, you agree to these terms. The [SynSeeder Privacy Policy](PRIVACY.md) explains what the app stores and sends. If you don't agree to these terms, don't use SynSeeder.
+These terms are an agreement between you and the GitHub user waterjugs ("we", "us"), who makes SynSeeder ("the app"). By running SynSeeder, you agree to these terms. Using the SynSeeder bot's **/seed** command on Discord also means you agree to them. The [SynSeeder Privacy Policy](PRIVACY.md) explains what the app stores and sends. If you don't agree to these terms, don't use SynSeeder.
 
 You must be 18 or older, and old enough to make a binding agreement where you live. Only run SynSeeder on a PC, and with a game account, that you own or are allowed to use for this.
 
@@ -29,7 +32,8 @@ During a run, SynSeeder takes over the game the way a player would, and you agre
 - clicks "Yes" on admin messages so the run can carry on, so you may not see a message an admin sends you;
 - once your mouse and keyboard have been left alone for 15 seconds, brings the game to the front, which can mean an Alt key tap, or a mouse signal that doesn't move the pointer, in whatever window you're using (watching a video or using a gamepad counts as leaving them alone);
 - closes the game up to 10 minutes after the server reaches 80 players (each copy waits a random time, so seeders don't all leave at once), after 4 hours, when it can't get in, or when you press **Stop seeding** or Ctrl+Alt+End, even if you've started playing in it yourself;
-- copies itself to `%LOCALAPPDATA%\SynSeeder` when you press **Seed now**, or **Save** with **Seed automatically** ticked. **Seed now** saves your settings too, so with that box ticked either button adds a Windows scheduled task that starts a run every day at your chosen time, and with it unticked either button removes the task. If the PC was off or asleep at that time, the run starts when the PC is next available, which can be hours late. It runs on battery too, and keeps going if a laptop is unplugged.
+- copies itself to `%LOCALAPPDATA%\SynSeeder` when you press **Seed now**, or **Save** with **Seed automatically** or **Seed when pinged** ticked. **Seed now** saves your settings too, so with **Seed automatically** ticked either button adds a Windows scheduled task that starts a run every day at your chosen time, and with it unticked either button removes the task. If the PC was off or asleep at that time, the run starts when the PC is next available, which can be hours late. It runs on battery too, and keeps going if a laptop is unplugged;
+- adds a second scheduled task when you press **Save** or **Seed now** with **Seed when pinged** ticked, and removes it when you press either with that box unticked. While you're signed in, the task checks about once a minute, during the hours you set (08:00 to 23:00 unless you change them), whether someone has called a seed with the SynSeeder bot on Discord. It acts only on a call less than 15 minutes old. If you haven't touched the mouse or keyboard for 5 minutes and nothing is full screen, it waits a random 0 to 3 minutes, checks again, and then starts a run as described above. Otherwise it asks first and does nothing unless you agree. Using a gamepad, or watching a video that isn't full screen, counts as leaving the PC alone, so a run can start then. It starts at most 3 of these runs a day, never two within 30 minutes, and only during your hours, but a run can carry on after they end, for up to 4 hours. Seed calls come from people given the Seed Caller role on Discord, not from you, so one can come at a time that doesn't suit you. Untick the box or narrow your hours if that's a problem.
 
 It's designed to send keys and clicks only while the game is the active window, but we can't promise that input never lands somewhere else. Save your work before a run is due. You're responsible for your PC, the power it uses and anything else running on it.
 
@@ -60,7 +64,8 @@ Don't use SynSeeder, or a changed version of it, to:
 - get around, hide from or interfere with anti-cheat or any other protection in the game, Steam or Epic, including by hiding a virtual machine from it;
 - play on accounts you don't own, or on more accounts than the game's and platform's rules allow;
 - break the rules of the server you're seeding, or disrupt or harass other players;
-- flood the player-count service it reads, or any other service, with requests;
+- flood the player-count service it reads, SynSeeder's seed-call service, or any other service, with requests;
+- call seeds with the bot's **/seed** command, if you have the Seed Caller role, for anything but filling the server when it needs players;
 - do anything illegal.
 
 Server admins can kick or ban the seeder like any other player. If a server's admins ask you to stop seeding their server, stop. SynSeeder clicks "Yes" on admin messages during a run, so you may not see a request sent in the game. Check the server's Discord or website now and then, and stop if the seeder keeps getting kicked.
@@ -73,9 +78,9 @@ Hell Let Loose, Steam, Epic Games and the other names here are trademarks of the
 
 ## 7. No warranty, and limits on liability
 
-SynSeeder is free and provided "as is" and "as available", without warranties of any kind, express or implied, including that it's fit for a purpose, works without errors, or keeps working after a game update. A game patch can break it at any time.
+SynSeeder, its seed-call service and the SynSeeder bot are free and provided "as is" and "as available", without warranties of any kind, express or implied, including that they're fit for a purpose, work without errors, or keep working after a game update. A game patch can break SynSeeder at any time, and the seed-call service or the bot can be down or stop at any time.
 
-As far as the law allows, we aren't liable for any loss or damage that comes from using SynSeeder or not being able to use it. That includes action taken against your game, Steam or Epic account; lost progress, data or work; problems with your PC; and anything the game, the server or its admins do.
+As far as the law allows, we aren't liable for any loss or damage that comes from using SynSeeder, its seed-call service or the bot, or not being able to use them. That includes action taken against your game, Steam or Epic account; lost progress, data or work; problems with your PC; and anything the game, the server or its admins do.
 
 If you break these terms and someone makes a claim against us because of it, you're responsible for that claim and its reasonable costs, as far as the law allows.
 
@@ -85,11 +90,11 @@ Some places don't allow these exclusions or limits. There, they apply only as fa
 
 **Updates.** Updates are on unless you turn them off. Before each run, SynSeeder checks its GitHub releases for a newer version. If there is one, it downloads it, installs it and carries on the run with the new version, without asking you first. An update can change anything the app does, including what section 2 describes. SynSeeder checks that each download arrived whole and matches what GitHub lists for it, but it can't tell whether a release itself is safe, and the app isn't code-signed. If you'd rather check each version yourself, turn updates off (the Privacy Policy says how); you then won't get fixes after a game patch.
 
-**Changes to SynSeeder and these terms.** We may change SynSeeder, or stop offering it, at any time. We may also change these terms. When we do, we'll change the date at the top and say so in the release notes. The new terms apply 14 days after that date, so you have time to stop if you don't agree. Updates install themselves, so you won't see the release notes unless you look; check the SynSeeder GitHub page now and then. Using SynSeeder after the new terms apply means you accept them.
+**Changes to SynSeeder and these terms.** We may change SynSeeder, its seed-call service or the bot, or stop offering them, at any time. We may also change these terms. When we do, we'll change the date at the top, add a note there saying what's coming, and say so in the release notes when it comes out. The new terms apply 14 days after that date, so you have time to stop if you don't agree. Updates install themselves, so you won't see the release notes unless you look; check the SynSeeder GitHub page now and then. Using SynSeeder after the new terms apply means you accept them.
 
-**Stopping.** You can stop using SynSeeder at any time: untick **Seed automatically**, press **Save**, then delete the app and its folders (the Privacy Policy lists them). We can end your permission to use it if you break these terms. Sections 5, 6 and 7 still apply after that.
+**Stopping.** You can stop using SynSeeder at any time: untick **Seed automatically** and **Seed when pinged**, press **Save**, then delete the app and its folders (the Privacy Policy lists them). We can end your permission to use it if you break these terms. Sections 5, 6 and 7 still apply after that.
 
-**Privacy.** The [SynSeeder Privacy Policy](PRIVACY.md) explains what the app stores and sends. In short, what the app saves stays on your PC. On its own, it only asks the server's stats page for the player count, downloads the pictures of the game's buttons and its window's fonts from GitHub, and checks GitHub for updates and downloads them. Playing on the server shares your player name and ID with the server and its admins, just as when you play yourself.
+**Privacy.** The [SynSeeder Privacy Policy](PRIVACY.md) explains what the app stores and sends. In short, what the app saves stays on your PC. On its own, it only asks the server's stats page for the player count, downloads the pictures of the game's buttons and its window's fonts from GitHub, and checks GitHub for updates and downloads them. With **Seed when pinged** ticked, it also asks SynSeeder's seed-call service on Cloudflare about once a minute whether a seed has been called. The SynSeeder bot only gets /seed commands. Its reply in the channel names who called, and it keeps nothing else about the people who use it. Playing on the server shares your player name and ID with the server and its admins, just as when you play yourself.
 
 **The rest.** If a court finds part of these terms unenforceable, the rest still applies. If we don't enforce a term straight away, we can still enforce it later. These terms are the whole agreement between you and us about SynSeeder. They're governed by the laws of the United States of America, leaving aside any rule that would apply another place's law. If you live somewhere whose laws give you rights that an agreement can't take away, you keep those rights.
 
