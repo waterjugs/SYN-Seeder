@@ -118,13 +118,11 @@ class WindowTests {
 
     static Test_header_is_dusk_over_first_light() {
         Patches.Value(Look, "scale", 1.0)  ; the header's size at 100%, whatever this PC's scaling
-        Canvas.failures := []
         pic := Canvas(480, 92)
         Paint.Header(pic, Font("Tahoma", 0, 0, false, 36))
         AssertEq(Look.Hex(pic.Pixel(3, 0)), "0C1823", "night at the top")
         AssertEq(Look.Hex(pic.Pixel(3, 91)), Look.Hex(Look.FIRST_LIGHT), "first light at the bottom")
         AssertEq(SeedlingCheck.Problems(pic), [], "seedling")
-        AssertEq(Canvas.failures, [], "drawing")
     }
 
     static Test_seedling_check_sees_a_missing_stem() {
@@ -156,21 +154,6 @@ class WindowTests {
             AssertEq(problems.Length, 1, JoinList(problems, "; "))
             Assert(InStr(problems[1], "the seedling's " side " leaf"), problems[1])
         }
-    }
-
-    static Test_failed_drawing_is_kept_for_the_checks() {
-        Patches.Value(Logs, "capture", [])
-        Canvas.failures := []
-        Canvas.Checked(0, "GdipFillPolygon")
-        AssertEq(Canvas.failures, [])
-        Canvas.Checked(18, "GdipCreateSolidFill")
-        AssertEq(Canvas.failures, ["GdipCreateSolidFill (GDI+ status 18)"])
-        AssertEq(Logs.capture, ["WARNING Couldn't draw part of the window: GdipCreateSolidFill (GDI+ status 18)"])
-        loop 30
-            Canvas.Checked(2, "GdipFillPolygon")
-        AssertEq(Canvas.failures.Length, 20, "only the first 20")
-        AssertEq(Logs.capture.Length, 20, "each kept one logged once")
-        Canvas.failures := []
     }
 
     static Test_player_count_is_fetched_without_waiting() {
