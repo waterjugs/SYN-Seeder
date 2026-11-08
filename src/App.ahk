@@ -3,7 +3,7 @@
 
 class App {
     static NAME := "SynSeeder"
-    static VERSION := "1.0.0"  ; keep in step with the ;@Ahk2Exe-SetVersion line in SynSeeder.ahk
+    static VERSION := "1.0.1"  ; keep in step with the ;@Ahk2Exe-SetVersion line in SynSeeder.ahk
     static REPO := "waterjugs/SYN-Seeder"
     static TERMS_URL := "https://github.com/waterjugs/SYN-Seeder/blob/main/TERMS.md"
     static PRIVACY_URL := "https://github.com/waterjugs/SYN-Seeder/blob/main/PRIVACY.md"
