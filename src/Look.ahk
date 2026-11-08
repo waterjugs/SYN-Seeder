@@ -362,16 +362,23 @@ class Canvas {
     ; and CI check it stays empty. Only the first 20 are kept.
     static failures := []
 
-    ; Notes a failure if ``status``, from the GDI+ call ``what``, isn't 0 (Ok).
+    ; Notes a failure if ``status``, from the GDI+ call ``what``, isn't 0
+    ; (Ok), and logs it, so a player's log shows a part missing from the window.
     static Checked(status, what) {
-        if status
-            Canvas.Failed(what " (GDI+ status " status ")")
+        if status {
+            text := what " (GDI+ status " status ")"
+            if Canvas.Failed(text)
+                Logs.Warning("Couldn't draw part of the window: " text)
+        }
         return status
     }
 
+    ; Keeps ``text`` unless 20 are kept already. True if it was kept.
     static Failed(text) {
-        if Canvas.failures.Length < 20
-            Canvas.failures.Push(text)
+        if Canvas.failures.Length >= 20
+            return false
+        Canvas.failures.Push(text)
+        return true
     }
 
     static _Brush(rgb) {
