@@ -244,7 +244,7 @@ class Canvas {
         get {
             if !this.g {
                 Gdip.Start()
-                DllCall("gdiplus\GdipCreateFromHDC", "Ptr", this.dc, "Ptr*", &g := 0)
+                Canvas.Checked(DllCall("gdiplus\GdipCreateFromHDC", "Ptr", this.dc, "Ptr*", &g := 0), "GdipCreateFromHDC")
                 DllCall("gdiplus\GdipSetSmoothingMode", "Ptr", g, "Int", 4)     ; anti-alias
                 DllCall("gdiplus\GdipSetPixelOffsetMode", "Ptr", g, "Int", 4)   ; pixel edges on whole numbers
                 this.g := g
@@ -283,7 +283,7 @@ class Canvas {
     _Round(x, y, w, h, r, rgb) {
         if w <= 0 || h <= 0
             return
-        DllCall("gdiplus\GdipCreatePath", "Int", 0, "Ptr*", &path := 0)
+        Canvas.Checked(DllCall("gdiplus\GdipCreatePath", "Int", 0, "Ptr*", &path := 0), "GdipCreatePath")
         r := Min(r, w / 2, h / 2)
         if r > 0 {
             d := 2 * r
@@ -296,7 +296,7 @@ class Canvas {
             DllCall("gdiplus\GdipAddPathRectangle", "Ptr", path, "Float", x, "Float", y, "Float", w, "Float", h)
         }
         brush := Canvas._Brush(rgb)
-        DllCall("gdiplus\GdipFillPath", "Ptr", this.Graphics, "Ptr", brush, "Ptr", path)
+        Canvas.Checked(DllCall("gdiplus\GdipFillPath", "Ptr", this.Graphics, "Ptr", brush, "Ptr", path), "GdipFillPath")
         DllCall("gdiplus\GdipDeleteBrush", "Ptr", brush)
         DllCall("gdiplus\GdipDeletePath", "Ptr", path)
     }
@@ -304,20 +304,20 @@ class Canvas {
     ; A line ``width`` pixels wide through ``points`` (x1, y1, x2, y2, ...) with
     ; round joins, and round ends if ``roundEnds``.
     Lines(points, width, rgb, roundEnds := false) {
-        DllCall("gdiplus\GdipCreatePen1", "UInt", Look.Argb(rgb), "Float", width, "Int", 2, "Ptr*", &pen := 0)  ; UnitPixel
+        Canvas.Checked(DllCall("gdiplus\GdipCreatePen1", "UInt", Look.Argb(rgb), "Float", width, "Int", 2, "Ptr*", &pen := 0), "GdipCreatePen1")  ; UnitPixel
         DllCall("gdiplus\GdipSetPenLineJoin", "Ptr", pen, "Int", 2)  ; round
         if roundEnds {
             DllCall("gdiplus\GdipSetPenStartCap", "Ptr", pen, "Int", 2)
             DllCall("gdiplus\GdipSetPenEndCap", "Ptr", pen, "Int", 2)
         }
-        DllCall("gdiplus\GdipDrawLines", "Ptr", this.Graphics, "Ptr", pen, "Ptr", Canvas._Points(points), "Int", points.Length // 2)
+        Canvas.Checked(DllCall("gdiplus\GdipDrawLines", "Ptr", this.Graphics, "Ptr", pen, "Ptr", Canvas._Points(points), "Int", points.Length // 2), "GdipDrawLines")
         DllCall("gdiplus\GdipDeletePen", "Ptr", pen)
     }
 
     ; A filled shape through ``points`` (x1, y1, x2, y2, ...).
     Polygon(points, rgb) {
         brush := Canvas._Brush(rgb)
-        DllCall("gdiplus\GdipFillPolygon", "Ptr", this.Graphics, "Ptr", brush, "Ptr", Canvas._Points(points), "Int", points.Length // 2, "Int", 1)
+        Canvas.Checked(DllCall("gdiplus\GdipFillPolygon", "Ptr", this.Graphics, "Ptr", brush, "Ptr", Canvas._Points(points), "Int", points.Length // 2, "Int", 1), "GdipFillPolygon")
         DllCall("gdiplus\GdipDeleteBrush", "Ptr", brush)
     }
 
@@ -353,8 +353,25 @@ class Canvas {
         Gdip.SavePng(this.hbm, path)
     }
 
+    ; Drawing that went wrong without stopping the window: GDI+ calls that
+    ; failed, so Windows left that shape out, and painters that threw. Tests
+    ; and CI check it stays empty. Only the first 20 are kept.
+    static failures := []
+
+    ; Notes a failure if ``status``, from the GDI+ call ``what``, isn't 0 (Ok).
+    static Checked(status, what) {
+        if status
+            Canvas.Failed(what " (GDI+ status " status ")")
+        return status
+    }
+
+    static Failed(text) {
+        if Canvas.failures.Length < 20
+            Canvas.failures.Push(text)
+    }
+
     static _Brush(rgb) {
-        DllCall("gdiplus\GdipCreateSolidFill", "UInt", Look.Argb(rgb), "Ptr*", &brush := 0)
+        Canvas.Checked(DllCall("gdiplus\GdipCreateSolidFill", "UInt", Look.Argb(rgb), "Ptr*", &brush := 0), "GdipCreateSolidFill")
         return brush
     }
 
@@ -429,6 +446,7 @@ class Skin {
             pic.Paint(dc, left, top)
         } catch as err {
             Logs.Exception("Couldn't draw part of the window", err)
+            Canvas.Failed("a painter threw " Type(err) ": " err.Message)
         }
         return true
     }
