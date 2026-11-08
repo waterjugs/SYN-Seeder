@@ -6,6 +6,8 @@ class SeedlingCheck {
     ; What's wrong with the seedling on the header picture ``canvas``: [] if nothing.
     static Problems(canvas) {
         s := Look.scale, u := Look.MARK_UNIT * s, top := Look.MARK_Y * s
+        if Floor(top + 54 * u) >= canvas.h  ; rows past the bottom would be read outside the picture
+            return ["the picture is too small for the header at " Round(s * 100) "% scaling"]
         problems := []
         ; Only the stem crosses these rows: below the leaves, above its foot
         ; at 56 units in the seedling's 64-unit box.

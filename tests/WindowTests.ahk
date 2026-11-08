@@ -117,6 +117,7 @@ class WindowTests {
     }
 
     static Test_header_is_dusk_over_first_light() {
+        Patches.Value(Look, "scale", 1.0)  ; the header's size at 100%, whatever this PC's scaling
         Canvas.failures := []
         pic := Canvas(480, 92)
         Paint.Header(pic, Font("Tahoma", 0, 0, false, 36))
@@ -127,6 +128,7 @@ class WindowTests {
     }
 
     static Test_seedling_check_sees_a_missing_stem() {
+        Patches.Value(Look, "scale", 1.0)
         pic := Canvas(480, 92)
         Paint.Header(pic, Font("Tahoma", 0, 0, false, 36))
         sky := pic.Pixel(3, 46)
