@@ -217,6 +217,10 @@ class Font {
 ; Coordinates are pixel edges: a 1 x 1 square at (0, 0) covers one pixel.
 class Canvas {
     __New(w, h, background := "") {
+        ; GDI+ has to be running before a brush, pen or path is made. On
+        ; Windows (not Wine) one made earlier fails, and its shape is left
+        ; out: SynSeeder 1.0.0's window lost the seedling's stem that way.
+        Gdip.Start()
         this.w := Max(1, w), this.h := Max(1, h), this.g := 0
         bi := Buffer(40, 0)  ; BITMAPINFOHEADER: top-down, 32 bits a pixel
         NumPut("UInt", 40, bi, 0), NumPut("Int", this.w, bi, 4), NumPut("Int", -this.h, bi, 8)
