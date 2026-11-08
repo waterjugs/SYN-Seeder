@@ -16,7 +16,7 @@
 #Warn LocalSameAsGlobal, Off
 ;@Ahk2Exe-SetName SynSeeder
 ;@Ahk2Exe-SetDescription SynSeeder
-;@Ahk2Exe-SetVersion 1.1.0
+;@Ahk2Exe-SetVersion 1.0.0
 ;@Ahk2Exe-SetCompanyName waterjugs
 ;@Ahk2Exe-SetCopyright Copyright (c) waterjugs
 ;@Ahk2Exe-SetOrigFilename SynSeeder.exe
