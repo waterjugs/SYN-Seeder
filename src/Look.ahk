@@ -217,7 +217,7 @@ class Font {
 ; Coordinates are pixel edges: a 1 x 1 square at (0, 0) covers one pixel.
 class Canvas {
     __New(w, h, background := "") {
-        this.w := Max(1, w), this.h := Max(1, h), this.g := 0, this.old := 0  ; so __Delete can tidy up after a throw
+        this.w := Max(1, w), this.h := Max(1, h), this.g := 0
         bi := Buffer(40, 0)  ; BITMAPINFOHEADER: top-down, 32 bits a pixel
         NumPut("UInt", 40, bi, 0), NumPut("Int", this.w, bi, 4), NumPut("Int", -this.h, bi, 8)
         NumPut("UShort", 1, bi, 12), NumPut("UShort", 32, bi, 14)
@@ -248,7 +248,7 @@ class Canvas {
         get {
             if !this.g {
                 Gdip.Start()
-                Canvas.Checked(DllCall("gdiplus\GdipCreateFromHDC", "Ptr", this.dc, "Ptr*", &g := 0), "GdipCreateFromHDC")
+                DllCall("gdiplus\GdipCreateFromHDC", "Ptr", this.dc, "Ptr*", &g := 0)
                 DllCall("gdiplus\GdipSetSmoothingMode", "Ptr", g, "Int", 4)     ; anti-alias
                 DllCall("gdiplus\GdipSetPixelOffsetMode", "Ptr", g, "Int", 4)   ; pixel edges on whole numbers
                 this.g := g
@@ -287,7 +287,7 @@ class Canvas {
     _Round(x, y, w, h, r, rgb) {
         if w <= 0 || h <= 0
             return
-        Canvas.Checked(DllCall("gdiplus\GdipCreatePath", "Int", 0, "Ptr*", &path := 0), "GdipCreatePath")
+        DllCall("gdiplus\GdipCreatePath", "Int", 0, "Ptr*", &path := 0)
         r := Min(r, w / 2, h / 2)
         if r > 0 {
             d := 2 * r
@@ -300,7 +300,7 @@ class Canvas {
             DllCall("gdiplus\GdipAddPathRectangle", "Ptr", path, "Float", x, "Float", y, "Float", w, "Float", h)
         }
         brush := Canvas._Brush(rgb)
-        Canvas.Checked(DllCall("gdiplus\GdipFillPath", "Ptr", this.Graphics, "Ptr", brush, "Ptr", path), "GdipFillPath")
+        DllCall("gdiplus\GdipFillPath", "Ptr", this.Graphics, "Ptr", brush, "Ptr", path)
         DllCall("gdiplus\GdipDeleteBrush", "Ptr", brush)
         DllCall("gdiplus\GdipDeletePath", "Ptr", path)
     }
@@ -308,20 +308,20 @@ class Canvas {
     ; A line ``width`` pixels wide through ``points`` (x1, y1, x2, y2, ...) with
     ; round joins, and round ends if ``roundEnds``.
     Lines(points, width, rgb, roundEnds := false) {
-        Canvas.Checked(DllCall("gdiplus\GdipCreatePen1", "UInt", Look.Argb(rgb), "Float", width, "Int", 2, "Ptr*", &pen := 0), "GdipCreatePen1")  ; UnitPixel
+        DllCall("gdiplus\GdipCreatePen1", "UInt", Look.Argb(rgb), "Float", width, "Int", 2, "Ptr*", &pen := 0)  ; UnitPixel
         DllCall("gdiplus\GdipSetPenLineJoin", "Ptr", pen, "Int", 2)  ; round
         if roundEnds {
             DllCall("gdiplus\GdipSetPenStartCap", "Ptr", pen, "Int", 2)
             DllCall("gdiplus\GdipSetPenEndCap", "Ptr", pen, "Int", 2)
         }
-        Canvas.Checked(DllCall("gdiplus\GdipDrawLines", "Ptr", this.Graphics, "Ptr", pen, "Ptr", Canvas._Points(points), "Int", points.Length // 2), "GdipDrawLines")
+        DllCall("gdiplus\GdipDrawLines", "Ptr", this.Graphics, "Ptr", pen, "Ptr", Canvas._Points(points), "Int", points.Length // 2)
         DllCall("gdiplus\GdipDeletePen", "Ptr", pen)
     }
 
     ; A filled shape through ``points`` (x1, y1, x2, y2, ...).
     Polygon(points, rgb) {
         brush := Canvas._Brush(rgb)
-        Canvas.Checked(DllCall("gdiplus\GdipFillPolygon", "Ptr", this.Graphics, "Ptr", brush, "Ptr", Canvas._Points(points), "Int", points.Length // 2, "Int", 1), "GdipFillPolygon")
+        DllCall("gdiplus\GdipFillPolygon", "Ptr", this.Graphics, "Ptr", brush, "Ptr", Canvas._Points(points), "Int", points.Length // 2, "Int", 1)
         DllCall("gdiplus\GdipDeleteBrush", "Ptr", brush)
     }
 
@@ -357,32 +357,8 @@ class Canvas {
         Gdip.SavePng(this.hbm, path)
     }
 
-    ; Drawing that went wrong without stopping the window: GDI+ calls that
-    ; failed, so Windows left that shape out, and painters that threw. Tests
-    ; and CI check it stays empty. Only the first 20 are kept.
-    static failures := []
-
-    ; Notes a failure if ``status``, from the GDI+ call ``what``, isn't 0
-    ; (Ok), and logs it, so a player's log shows a part missing from the window.
-    static Checked(status, what) {
-        if status {
-            text := what " (GDI+ status " status ")"
-            if Canvas.Failed(text)
-                Logs.Warning("Couldn't draw part of the window: " text)
-        }
-        return status
-    }
-
-    ; Keeps ``text`` unless 20 are kept already. True if it was kept.
-    static Failed(text) {
-        if Canvas.failures.Length >= 20
-            return false
-        Canvas.failures.Push(text)
-        return true
-    }
-
     static _Brush(rgb) {
-        Canvas.Checked(DllCall("gdiplus\GdipCreateSolidFill", "UInt", Look.Argb(rgb), "Ptr*", &brush := 0), "GdipCreateSolidFill")
+        DllCall("gdiplus\GdipCreateSolidFill", "UInt", Look.Argb(rgb), "Ptr*", &brush := 0)
         return brush
     }
 
@@ -457,7 +433,6 @@ class Skin {
             pic.Paint(dc, left, top)
         } catch as err {
             Logs.Exception("Couldn't draw part of the window", err)
-            Canvas.Failed("a painter threw " Type(err) ": " err.Message)
         }
         return true
     }
