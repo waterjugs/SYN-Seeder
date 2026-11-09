@@ -1,0 +1,34 @@
+// Cloudflare's settings for the SynSeeder bot. Cloudflare reads this file
+// each time it deploys the bot from the bot/ folder of the main branch.
+{
+  // The Worker's name. It's part of the bot's web address, which is built
+  // into SynSeeder, so it must never change. It must match the name the
+  // Worker has on Cloudflare.
+  "name": "synseeder",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-01",
+  // Don't send Cloudflare usage statistics about the deploys.
+  "send_metrics": false,
+
+  // The free https://synseeder.<your-subdomain>.workers.dev address.
+  "workers_dev": true,
+  // No extra preview addresses for test versions.
+  "preview_urls": false,
+
+  // The IDs and the Public Key are typed into Cloudflare's dashboard, not
+  // this file. This stops a deploy from deleting them.
+  "keep_vars": true,
+
+  // No request logs or traces: the Privacy Policy promises they're switched off.
+  "observability": {
+    "enabled": false,
+    "logs": { "enabled": false, "invocation_logs": false },
+    "traces": { "enabled": false }
+  },
+
+  // The one small storage object that holds the seed-call flag.
+  "durable_objects": {
+    "bindings": [{ "name": "SEED_FLAG", "class_name": "SeedFlag" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SeedFlag"] }]
+}
