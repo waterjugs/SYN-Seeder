@@ -1,0 +1,41 @@
+name: bot
+
+# The SynSeeder bot in bot/: run its tests, and check that the PowerShell
+# script that adds /seed parses in Windows PowerShell 5.1. Cloudflare
+# deploys the bot itself, from main.
+
+on:
+  push:
+    paths:
+      - 'bot/**'
+      - '.github/workflows/bot.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run the bot's tests
+        working-directory: bot
+        run: npm test
+
+  powershell:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check that add-seed-command.ps1 parses in Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile("$PWD\bot\add-seed-command.ps1", [ref]$null, [ref]$errors) | Out-Null
+          if ($errors) { $errors | ForEach-Object { Write-Host $_ }; exit 1 }
+          Write-Host "PowerShell $($PSVersionTable.PSVersion): no parse errors"
