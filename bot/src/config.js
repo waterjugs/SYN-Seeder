@@ -7,10 +7,13 @@ import { isPublicKey } from './discord.js';
 // A Discord ID number ("snowflake"): 17 to 20 digits.
 export const SNOWFLAKE = /^\d{17,20}$/;
 
+// The only Discord server the bot works in: SYNDICATE (discord.gg/syn-hll).
+// Fixed here rather than in a setting, so it can't be pointed somewhere else.
+export const SERVER_ID = '1117120667490455713';
+
 // The settings' names, as they're typed on Cloudflare.
 export const SETTING_NAMES = Object.freeze([
   'DISCORD_PUBLIC_KEY',
-  'DISCORD_SERVER_ID',
   'SYNSEEDER_CHANNEL_ID',
   'SEED_CALLER_ROLE_ID',
   'SEEDERS_ROLE_ID',
@@ -30,11 +33,11 @@ export function readConfig(env) {
 
   const publicKey = value('DISCORD_PUBLIC_KEY').toLowerCase();
   if (!isPublicKey(publicKey)) problems.push('DISCORD_PUBLIC_KEY');
-  const serverId = id('DISCORD_SERVER_ID');
+  const serverId = SERVER_ID;
   const channelId = id('SYNSEEDER_CHANNEL_ID');
   const seedCallerRoleId = id('SEED_CALLER_ROLE_ID');
 
-  // The Seeders role is optional: left empty, the bot's reply pings nobody.
+  // The role to ping is optional: left empty, the bot's reply pings nobody.
   let seedersRoleId = null;
   const seeders = value('SEEDERS_ROLE_ID');
   if (seeders !== '') {

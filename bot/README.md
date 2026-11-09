@@ -1,11 +1,13 @@
 # The SynSeeder bot
 
 This folder is a small Discord bot that runs on Cloudflare for free. It lets
-trusted members start a seed from Discord.
+members of the **SYNDICATE** Discord server (discord.gg/syn-hll) who have the
+**Syngineers** role start a seed from Discord. It works in that server only,
+and it needs no new roles.
 
-1. Someone with the **Seed Caller** role types **/seed** in your SynSeeder channel.
-2. The bot checks the call (see below). If it's fine, it replies in the channel
-   and pings the **Seeders** role.
+1. A Syngineer types **/seed** in the SynSeeder channel.
+2. The bot checks the call (see below). If it's fine, it replies in the
+   channel. It can also ping a role, if you choose one in step 6.
 3. Every PC with **Seed when pinged** ticked in SynSeeder (version 1.1.0 and
    later) checks the bot about once a minute. It sees the call and starts its
    normal seeding run, as long as nobody is using that PC.
@@ -17,8 +19,9 @@ The bot never talks to anyone's PC. The PCs come and ask it.
 A seed is called only if all of these are true. Otherwise the bot says why,
 and only the person who typed /seed sees that answer.
 
-- /seed was used in your server and in your SynSeeder channel.
-- The person has the Seed Caller role. Server admins need it too.
+- /seed was used in the SYNDICATE server and in the SynSeeder channel. The
+  server is built into the bot's code, so it can't be pointed anywhere else.
+- The person has the Syngineers role. Server admins need it too.
 - The game server has fewer than 50 players. If the bot can't read the player
   count, it doesn't call a seed.
 - No seed was called in the last 30 minutes, and fewer than 4 today. "Today"
@@ -146,52 +149,78 @@ Anyone who gets into one of them could start seeds on everyone's PCs.
 If Discord says the address couldn't be verified, the Public Key in step 4
 doesn't match. Copy it again and check there are no spaces around it.
 
-### 6. Make the roles and copy four ID numbers
+### 6. Copy two ID numbers
 
-1. In your Discord server, open **Server Settings > Roles** and make two roles:
-   - **Seed Caller**: for the trusted adults who may call a seed.
-   - **Seeders**: for players who want a ping when a seed is called. It
-     doesn't need any permissions. Leave **Allow anyone to @mention this
-     role** off; only the bot needs to ping it.
-2. Turn on Developer Mode: **User Settings > Advanced > Developer Mode**.
+You don't make any roles. The bot uses SYNDICATE's existing **Syngineers**
+role. It also works in one channel only. Pick the SYNDICATE channel where
+/seed should work, with its admins if you're not one. This guide calls it the
+SynSeeder channel.
+
+1. Turn on Developer Mode: **User Settings > Advanced > Developer Mode**.
    This adds **Copy ID** to Discord's right-click menus.
-3. Copy each ID and add it on Cloudflare as in step 4 (Type **Text**, then
-   **Deploy**):
+2. In the SYNDICATE server, copy each ID and add it on Cloudflare as in
+   step 4 (Type **Text**, then **Deploy**):
 
 | Variable name | Where to copy it |
 | --- | --- |
-| `DISCORD_SERVER_ID` | Right-click your server's icon > **Copy Server ID** |
-| `SYNSEEDER_CHANNEL_ID` | Right-click your SynSeeder channel > **Copy Channel ID** |
-| `SEED_CALLER_ROLE_ID` | Server Settings > Roles > right-click **Seed Caller** > **Copy Role ID** |
-| `SEEDERS_ROLE_ID` | Server Settings > Roles > right-click **Seeders** > **Copy Role ID** |
+| `SYNSEEDER_CHANNEL_ID` | Right-click the SynSeeder channel > **Copy Channel ID** |
+| `SEED_CALLER_ROLE_ID` | Click the name of anyone who has Syngineers (in the member list, for example). In their profile, right-click **Syngineers** > **Copy Role ID**. If you can't see the role there, open their full profile |
 
-Each one is a long number. If one of the first three is missing or isn't a
-number, /seed tells you which. If /seed says it's the wrong server, or names
-a channel or role that looks wrong, copy that ID again. `SEEDERS_ROLE_ID` is
-different: if it's missing or its name is misspelled, /seed still calls
-seeds but pings nobody, so check its name carefully.
+Each one is a long number. If one is missing or isn't a number, /seed tells
+you which. If /seed names a channel or role that looks wrong, copy that ID
+again.
 
-### 7. Invite the bot to your server
+You don't need the server's ID: the bot already knows SYNDICATE's.
+
+**Optional: a role to ping.** By default the bot's reply pings nobody. If
+SYNDICATE already has a role that players join to hear about seeds, you can
+add a third setting, `SEEDERS_ROLE_ID`, with that role's ID. Copy it the
+same way: click someone who has the role, then right-click the role in their
+profile > **Copy Role ID**. Then each call pings that role. Leave the setting
+out for no ping. If the setting's name is misspelled, /seed still calls seeds
+but pings nobody. If its value isn't a number, /seed says so.
+
+### 7. Invite the bot to the SYNDICATE server
+
+Steps 7 and 9 need admin rights in SYNDICATE (at least **Manage Server**
+and **Manage Roles**). If you don't have them, ask a SYNDICATE admin to do
+them with you:
+
+- In 7.2, only you can add the bot, because it's private (step 2.5), and
+  only to a server where you have **Manage Server**. So either the admin
+  gives you **Manage Server** for a while, or you turn **Public Bot** on for
+  a moment on the Developer Portal's **Bot** page and press **Save
+  Changes**. Then send the admin the link from 7.1. As soon as they tell you
+  Discord says SynSeeder was added, turn **Public Bot** off again and press
+  **Save Changes**. (Don't wait to see the bot in the member list. It always
+  shows as offline, and SYNDICATE is too big to list offline members.)
+- The admin can do step 9 for you, and 7.3 if you chose a role to ping.
+
+Do steps 7 to 9 in one go. Until step 9 is done, everyone in the server sees
+/seed, though the bot turns down anyone without the Syngineers role.
 
 1. Copy this link, and replace `APPLICATION_ID` with the **Application ID**
    from the Developer Portal's General Information page:
 
    `https://discord.com/oauth2/authorize?client_id=APPLICATION_ID&scope=bot+applications.commands&permissions=0`
 
-2. Open it in your browser, pick your server, and press **Authorize**.
+2. Open it in your browser, pick **SYNDICATE**, and press **Authorize**.
    The bot joins with no server-wide permissions. It doesn't need any to
    answer /seed.
-3. Let it ping Seeders in your SynSeeder channel only: right-click the
-   channel > **Edit Channel > Permissions > Advanced permissions**, press **+**
-   next to **Roles/Members**, and pick the bot, **SynSeeder** (it's listed
-   under Members). Set these three to allow (the green tick), and press
-   **Save Changes**:
+3. Only if you chose a role to ping in step 6: let the bot ping it in the
+   SynSeeder channel. Right-click the channel > **Edit Channel >
+   Permissions > Advanced permissions**, press **+** next to
+   **Roles/Members**, and pick the bot, **SynSeeder** (it's listed under
+   Members). Set these three to allow (the green tick), and press **Save
+   Changes**:
    - **View Channel**
    - **Send Messages**
-   - **Mention @everyone, @here, and All Roles**
+   - **Mention @everyone, @here, and All Roles**. That sounds big, but it
+     only works in this one channel, and the bot only ever pings the role
+     you chose.
 
-   That last one sounds big, but it only works in this one channel, and
-   the bot only ever pings Seeders.
+   Without a role to ping, skip this. The bot can answer /seed without any
+   channel permissions.
 
 ### 8. Add the /seed command
 
@@ -206,9 +235,8 @@ seeds but pings nobody, so check its name carefully.
    `powershell -NoProfile -ExecutionPolicy Bypass -File .\add-seed-command.ps1`
 
    (This runs just this one script. It doesn't change any Windows settings.)
-4. It asks for three things. Paste each one with a right-click and press Enter:
+4. It asks for two things. Paste each one with a right-click and press Enter:
    - the **Application ID** (General Information),
-   - your **server ID** (as in step 6),
    - the **bot token**: on the Developer Portal's **Bot** page press
      **Reset Token**, then **Copy**. It stays hidden while you paste it.
 5. When it finishes, whether it says "Done" or not, go back to the **Bot**
@@ -217,40 +245,45 @@ seeds but pings nobody, so check its name carefully.
    didn't work, fix what it says and run it again, with a fresh token from
    **Reset Token** and **Copy**.
 
-### 9. Let only Seed Callers use /seed
+### 9. Let only Syngineers use /seed
 
 Do this on a computer (the Discord app or discord.com), not the phone app.
 
 Until you do this step, everyone in the server sees /seed, though the bot
-turns down anyone without the Seed Caller role.
+turns down anyone without the Syngineers role.
 
 1. In Discord, open **Server Settings > Integrations**, and next to
    **SynSeeder** press **Manage**.
 2. Under **Roles & Members**, turn **@everyone** off (the red cross). Then add
-   **Seed Caller** and allow it (the green tick).
+   **Syngineers** and allow it (the green tick).
 3. Under **Channels**, turn **All Channels** off (the red cross). Then add your
    SynSeeder channel and allow it (the green tick).
 4. If Discord shows **Save Changes**, press it.
 
-Now only Seed Callers see /seed, and only in that channel. The bot checks
+Now only Syngineers see /seed, and only in that channel. The bot checks
 both again itself, because server admins can always use every command.
 
 ### 10. Try it
 
-You're the server owner, so you can use /seed whatever step 9 says. So the
-first check needs someone else.
+Server admins can use /seed whatever step 9 says. So the first check needs
+someone who isn't an admin.
 
-1. Give **Seed Caller** to one trusted member who isn't a server admin. Ask
-   them whether /seed shows up when they type `/` in your SynSeeder channel.
+1. Ask a Syngineer who isn't a server admin whether /seed shows up when they
+   type `/` in the SynSeeder channel.
    Then ask someone who has neither the role nor admin rights whether it
    doesn't (admins always see every command). If either is wrong, check
    step 9.
-2. Give yourself the **Seed Caller** role too. In your SynSeeder channel,
-   type `/seed` and press Enter.
-   - If the server has fewer than 50 players, the bot replies to everyone and
-     pings Seeders. Open the `/seed-call` address from step 3: it now shows
-     the call and its age. Ask someone with the Seeders role whether Discord
-     notified them. If not, check step 7.3 and `SEEDERS_ROLE_ID` (step 6).
+2. Check you have the **Syngineers** role yourself: the bot turns down
+   anyone without it, even server admins. The bot itself doesn't need the
+   role.
+   If you don't, ask a SYNDICATE admin for it, or ask a Syngineer to do 2
+   and 3 and tell you what they see.
+   In the SynSeeder channel, type `/seed` and press Enter.
+   - If the server has fewer than 50 players, the bot replies to everyone.
+     Open the `/seed-call` address from step 3: it now shows the call and
+     its age. If you chose a role to ping, ask someone with it whether
+     Discord notified them. If not, check step 7.3 and `SEEDERS_ROLE_ID`
+     (step 6).
    - If it has 50 or more, only you see a message saying it doesn't need a seed.
 3. If the bot called a seed in 2, type `/seed` again. Only you see a message
    saying a seed was called less than 30 minutes ago (or, if that was the 4th
@@ -258,19 +291,19 @@ first check needs someone else.
    doesn't need a seed, do 2 and 3 another time, when it has fewer than 50
    players.
 
-If /seed doesn't show up for a Seed Caller, check step 9, and that the
+If /seed doesn't show up for a Syngineer, check step 9, and that the
 channel lets them **Use Application Commands** (it does unless someone
 turned it off).
 If the bot always says it couldn't read the player count, the stats page may
 be refusing Cloudflare. Tell Claude.
 
-### 11. Decide who gets which role
+### 11. Keep the Syngineers role for trusted adults
 
-- Give **Seed Caller** only to adults you trust. Each call can start the
-  game on every PC with Seed when pinged ticked.
-- Players can take **Seeders** themselves (for example in **Channels & Roles**),
-  or you can hand it out. The role only makes Discord notify them. The tick
-  box in SynSeeder is what makes a PC seed.
+- Everyone with **Syngineers** can call seeds, and each call can start the
+  game on every PC with Seed when pinged ticked. So check with SYNDICATE's
+  admins that the role goes only to adults they trust.
+- A role to ping (step 6) only makes Discord notify people. The tick box in
+  SynSeeder is what makes a PC seed.
 
 ## Good to know
 

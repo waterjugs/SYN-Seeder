@@ -129,7 +129,7 @@ async function seedCommand(interaction, deps, arrivedAt) {
   }
 
   const { serverId, channelId, seedCallerRoleId, seedersRoleId } = deps.config;
-  if (interaction.guild_id !== serverId) return privateReply('/seed only works in the server this bot was set up for.');
+  if (interaction.guild_id !== serverId) return privateReply('/seed only works in the SYNDICATE Discord server.');
   if (interaction.channel_id !== channelId) return privateReply(`Use /seed in <#${channelId}>.`);
   const roles = interaction.member?.roles;
   if (!Array.isArray(roles) || !roles.includes(seedCallerRoleId)) {
@@ -229,7 +229,7 @@ function limitMessage(verdict) {
 }
 
 // The reply everyone in the channel sees. It names the caller without
-// notifying them, and pings only the Seeders role.
+// notifying them, and pings only the role in SEEDERS_ROLE_ID, if there is one.
 function publicCall(callerId, players, seedersRoleId, endsAt) {
   const ping = seedersRoleId ? `<@&${seedersRoleId}> ` : '';
   const content = `${ping}Seed called by <@${callerId}>. The server has ${players} players. `

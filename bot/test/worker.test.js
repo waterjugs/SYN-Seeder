@@ -4,7 +4,7 @@
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import worker, { SeedFlag } from '../src/index.js';
-import { CALLER, CHANNEL, CALLER_ROLE, SEEDERS_ROLE, SERVER, discordRequest, getRequest, makeKeys, newCallId, seedCommand } from './helpers.js';
+import { CALLER, CHANNEL, CALLER_ROLE, SEEDERS_ROLE, discordRequest, getRequest, makeKeys, newCallId, seedCommand } from './helpers.js';
 import { STATS_URL } from '../src/stats.js';
 
 const keys = await makeKeys();
@@ -53,7 +53,6 @@ let statsCalls;
 beforeEach(() => {
   env = {
     DISCORD_PUBLIC_KEY: keys.publicKey,
-    DISCORD_SERVER_ID: SERVER,
     SYNSEEDER_CHANNEL_ID: CHANNEL,
     SEED_CALLER_ROLE_ID: CALLER_ROLE,
     SEEDERS_ROLE_ID: SEEDERS_ROLE,

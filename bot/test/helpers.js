@@ -4,8 +4,9 @@
 import { checkLimits, liveCall, newCallId, normalState, recordCall } from '../src/rules.js';
 export { newCallId };
 import { SeedCallCache } from '../src/handler.js';
+import { SERVER_ID } from '../src/config.js';
 
-export const SERVER = '111111111111111111';
+export const SERVER = SERVER_ID;
 export const CHANNEL = '222222222222222222';
 export const OTHER_CHANNEL = '222222222222222229';
 export const CALLER_ROLE = '333333333333333333';
@@ -85,7 +86,7 @@ export function makeDeps(keys, { now = Date.UTC(2026, 10, 20, 18, 0, 0), players
   return deps;
 }
 
-// A /seed command as Discord sends it, from a Seed Caller in the right channel.
+// A /seed command as Discord sends it, from a Syngineer in the right channel.
 export function seedCommand(overrides = {}) {
   return {
     type: 2,
