@@ -1,8 +1,8 @@
 # SynSeeder Privacy Policy
 
-Last updated: 8 November 2026
+Last updated: 9 November 2026
 
-**New in version 1.1.0:** an optional **Seed when pinged** setting and a SynSeeder bot for Discord. That version won't come out before 22 November 2026. The parts of this policy about the bot apply as soon as it's added to a Discord server, and the parts about Seed when pinged apply only from version 1.1.0 on.
+**New in version 1.1.0:** an optional **Seed when pinged** setting and a SynSeeder bot for Discord. That version won't come out before 23 November 2026. The parts of this policy about the bot apply as soon as it's added to the SYNDICATE Discord server, and the parts about Seed when pinged apply only from version 1.1.0 on.
 
 SynSeeder doesn't send us your name, your files or anything you type, and it doesn't sell your information. It has no accounts, ads, analytics or crash reporting, and it never uploads your files. Like anything that goes online, it shows your IP address to the sites it talks to: the server's stats page, for the player count, and GitHub, to download the pictures and fonts SynSeeder uses and to check for and download updates. If you tick **Seed when pinged**, it also checks about once a minute whether someone has called a seed on Discord. It asks a small service that we run on Cloudflare, which sees your IP address and the time, like any website. We keep no record of them, though Cloudflare may keep its own for a while (see [What goes over the internet](#what-goes-over-the-internet)). If you use **/seed** on Discord, our bot gets your Discord ID, names and roles from Discord. It uses them on the spot to check you may call a seed, names you in its reply in the channel, and keeps no copy. Everything SynSeeder saves (settings, a log and the occasional screenshot) stays in folders on your own PC until you delete it.
 
@@ -67,11 +67,11 @@ The **Terms of Service** and **Privacy Policy** links at the bottom of SynSeeder
 
 ## The SynSeeder bot on Discord
 
-The SynSeeder bot lets people with the Seed Caller role call a seed with the **/seed** command. We add it to one Discord server only, the one where we run SynSeeder's channel. It runs on the same Cloudflare service as the seed calls. It only gets /seed commands, and it doesn't read other messages in the server.
+The SynSeeder bot lets people with the Syngineers role call a seed with the **/seed** command. It works in one Discord server only, SYNDICATE ([discord.gg/syn-hll](https://discord.gg/syn-hll)), and turns /seed down anywhere else. It runs on the same Cloudflare service as the seed calls. It only gets /seed commands, and it doesn't read other messages in the server.
 
 When someone uses /seed, Discord sends the bot what it sends with any command. That includes their Discord user ID, their names (user name, display name and server nickname), profile picture, roles and permissions, when they joined the server, and the language their Discord is set to. It also includes the server and channel it was used in. The bot uses the roles, server and channel to check that the person may call a seed there, and the ID to name them in its reply. It ignores the rest. Cloudflare handles all of it for us, with request logs switched off.
 
-The bot then reads the game server's public player count. It calls a seed only if the server has fewer than 50 players, no seed was called in the last 30 minutes, and fewer than 4 were called today. A call lasts 15 minutes. If the bot turns a call down, only the caller sees why. If it calls a seed, it replies in the channel. The reply names the person who called and can ping the Seeders role. That reply is the only record of who called, and the bot doesn't save a copy. Server moderators can delete it like any other message.
+The bot then reads the game server's public player count. It calls a seed only if the server has fewer than 50 players, no seed was called in the last 30 minutes, and fewer than 4 were called today. A call lasts 15 minutes. If the bot turns a call down, only the caller sees why. If it calls a seed, it replies in the channel. The reply names the person who called and can ping one role in the server, for players who want to hear about seed calls. That reply is the only record of who called, and the bot doesn't save a copy. Server moderators can delete it like any other message.
 
 The bot keeps only what its limits need: a random number for the latest seed call, when it was made, and how many calls were made today. It keeps nothing else about the people who use /seed. It doesn't know which Discord users have Seed when pinged ticked.
 
@@ -108,7 +108,7 @@ Unless you've sent us files, we never receive any of this, so there's nothing to
 
 **Your rights.** Privacy laws such as the GDPR and the CCPA give you rights over personal data that a developer holds about you. We don't hold any, unless you've sent us your log or screenshots. The seed-call service sees your IP address, and the bot sees your Discord details when you use /seed, but only for a moment, and we don't keep them. If you've sent us files, message us privately on [Discord](https://discord.com/users/132721731096936448) and we'll tell you what we still have and delete it. The bot's replies to /seed are Discord messages. To have one removed, ask a moderator of that server, or message us on Discord and we'll help get it removed. Everything else listed above is on your PC and under your control.
 
-**Children.** SynSeeder and its bot aren't meant for children. Use the app, and /seed, only if you're 18 or older. The Seed Caller role should go only to adults.
+**Children.** SynSeeder and its bot aren't meant for children. Use the app, and /seed, only if you're 18 or older. The Syngineers role, which /seed needs, should go only to adults.
 
 **Changes.** If the app, the seed-call service or the bot will collect, keep or send anything new, we'll update this policy at least 14 days before the change. That includes turning the service's request logs back on. We'll change the date at the top, add a note there saying what's coming, and say so in the release notes when it comes out. Updates install themselves, so check this page now and then, or turn updates off if you'd rather decide for yourself.
 

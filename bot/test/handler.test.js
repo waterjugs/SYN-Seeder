@@ -40,7 +40,7 @@ test('the PING works on the bare address too', async () => {
 
 test('the PING works before the IDs are filled in', async () => {
   const deps = makeDeps(keys);
-  deps.problems = ['DISCORD_SERVER_ID', 'SYNSEEDER_CHANNEL_ID', 'SEED_CALLER_ROLE_ID'];
+  deps.problems = ['SYNSEEDER_CHANNEL_ID', 'SEED_CALLER_ROLE_ID'];
   assert.deepEqual(await run(deps, { type: 1 }), { status: 200, body: { type: 1 } });
 });
 
@@ -95,7 +95,7 @@ test('signed junk is refused', async () => {
 
 // /seed
 
-test('a Seed Caller calls a seed, and the reply pings Seeders but not the caller', async () => {
+test('a Syngineer calls a seed, and the reply pings the chosen role but not the caller', async () => {
   const deps = makeDeps(keys);
   const { status, body } = await run(deps, seedCommand());
   assert.equal(status, 200);
@@ -120,14 +120,14 @@ test('the call reaches the PCs at once from the same copy of the Worker', async 
   assert.equal(deps.flag.state.callId, body.call);
 });
 
-test('without a Seeders role set, the reply pings nobody', async () => {
+test('without a role to ping, the reply pings nobody', async () => {
   const deps = makeDeps(keys, { seeders: null });
   const { body } = await run(deps, seedCommand());
   assert.match(body.data.content, new RegExp(`^Seed called by <@${CALLER}>`));
   assert.deepEqual(body.data.allowed_mentions, { parse: [], users: [], roles: [] });
 });
 
-test('someone without the Seed Caller role is refused, admins included', async () => {
+test('someone without the Syngineers role is refused, admins included', async () => {
   const deps = makeDeps(keys);
   const admin = seedCommand();
   admin.member.roles = ['666666666666666666'];
@@ -154,9 +154,9 @@ test('/seed in another channel is refused and points to the right one', async ()
 test('/seed in another server is refused', async () => {
   const deps = makeDeps(keys);
   const { body } = await run(deps, seedCommand({ guild_id: '121212121212121212' }));
-  assertPrivate(body, /only works in the server this bot was set up for/);
+  assertPrivate(body, /only works in the SYNDICATE Discord server/);
   const dm = seedCommand({ guild_id: undefined, member: undefined, user: { id: CALLER } });
-  assertPrivate((await run(deps, dm)).body, /only works in the server/);
+  assertPrivate((await run(deps, dm)).body, /only works in the SYNDICATE/);
   assert.equal(deps.flag.calls.call, 0);
 });
 
