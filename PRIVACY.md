@@ -1,10 +1,12 @@
 # SynSeeder Privacy Policy
 
-Last updated: 2 November 2026
+Last updated: 8 November 2026
 
-SynSeeder sends nothing about you to us, and it doesn't sell your information. It has no accounts, ads, analytics or crash reporting, and it never uploads your files. Like anything that goes online, it shows your IP address to the sites it talks to: the server's stats page, for the player count, and GitHub, to download the pictures and fonts SynSeeder uses and to check for and download updates. Everything it saves (settings, a log and the occasional screenshot) stays in folders on your own PC until you delete it.
+**New in version 1.1.0:** an optional **Seed when pinged** setting and a SynSeeder bot for Discord. That version won't come out before 22 November 2026. The parts of this policy about the bot apply as soon as it's added to a Discord server, and the parts about Seed when pinged apply only from version 1.1.0 on.
 
-This policy covers the SynSeeder app (SynSeeder.exe), made by the GitHub user waterjugs ("we", "us"). It doesn't cover Hell Let Loose: Vietnam, Steam, Epic, GitHub, Cloudflare, Discord, or the game server and its stats page. Other people run those, under their own rules and their own privacy policies where they have them.
+SynSeeder doesn't send us your name, your files or anything you type, and it doesn't sell your information. It has no accounts, ads, analytics or crash reporting, and it never uploads your files. Like anything that goes online, it shows your IP address to the sites it talks to: the server's stats page, for the player count, and GitHub, to download the pictures and fonts SynSeeder uses and to check for and download updates. If you tick **Seed when pinged**, it also checks about once a minute whether someone has called a seed on Discord. It asks a small service that we run on Cloudflare, which sees your IP address and the time, like any website. We keep no record of them, though Cloudflare may keep its own for a while (see [What goes over the internet](#what-goes-over-the-internet)). If you use **/seed** on Discord, our bot gets your Discord ID, names and roles from Discord. It uses them on the spot to check you may call a seed, names you in its reply in the channel, and keeps no copy. Everything SynSeeder saves (settings, a log and the occasional screenshot) stays in folders on your own PC until you delete it.
+
+This policy covers the SynSeeder app (SynSeeder.exe), its seed-call service and the SynSeeder bot on Discord, all made by the GitHub user waterjugs ("we", "us"). It doesn't cover Hell Let Loose: Vietnam, Steam, Epic, GitHub, Cloudflare, Discord, or the game server and its stats page. Other people run those, under their own rules and their own privacy policies where they have them.
 
 ## What SynSeeder keeps on your PC
 
@@ -12,15 +14,17 @@ SynSeeder saves only the items below, all on your PC, and none of them is sent a
 
 | What | Where | What's in it | Kept until |
 | --- | --- | --- | --- |
-| Settings | `%APPDATA%\SynSeeder\config.json` | Your daily start time, Steam or Epic, and the seeding settings (server name, stats address, timings, updates on or off). Nothing about you. | You delete it |
-| Log | `%APPDATA%\SynSeeder\seeder.log`, and `seeder.old.log` next to it | Times, player counts, each step of a run and any errors, which together show when your PC was on and in use. It can include your Windows user name (inside folder paths) and the name of a program that was in front of the game. | You delete it. Once the log passes 5 MB, SynSeeder renames it `seeder.old.log` (replacing the older one) and starts a new one, so there are never more than two |
+| Settings | `%APPDATA%\SynSeeder\config.json` | Your daily start time, Steam or Epic, and the seeding settings (server name, stats address, timings, updates on or off, and whether Seed when pinged is on, with its hours). Nothing about you. | You delete it |
+| Log | `%APPDATA%\SynSeeder\seeder.log`, and `seeder.old.log` next to it | Times, player counts, each step of a run and any errors, which together show when your PC was on and in use. With Seed when pinged on, it also notes each seed call the PC saw and whether it started a run, skipped it or asked you first. It can include your Windows user name (inside folder paths) and the name of a program that was in front of the game. | You delete it. Once the log passes 5 MB, SynSeeder renames it `seeder.old.log` (replacing the older one) and starts a new one, so there are never more than two |
 | Stuck screenshots | `%APPDATA%\SynSeeder\debug\` | A full-colour picture of the area where the game is drawn (or of your whole main screen, if it can't find the game window), saved when a run seems stuck while joining. It shows whatever is there, which can include player names, chat and any window or notification on top of the game. | The newest 20 are kept. Each time a new one is saved, older ones are deleted, so don't keep your own pictures in that folder |
 | Recorded screenshots | `%APPDATA%\SynSeeder\screenshots\` | Only if you start the app with `--record`, a developer option for making button images: your whole main screen every 3 seconds, for 10 minutes by default (about 200 pictures). | You delete them |
-| A copy of the app | `%LOCALAPPDATA%\SynSeeder\SynSeeder.exe` | Made when you press Seed now, or Save with Seed automatically ticked, so the schedule keeps working if you move or delete your download. Newer versions from GitHub replace it. | You delete it |
-| An update being installed | `%LOCALAPPDATA%\SynSeeder\SynSeeder-update.exe` | A newer version downloaded from GitHub. It copies itself over the app above and finishes that run. If something still has the app open, such as a SynSeeder window started from it, the download stays here so a later run can finish installing it without downloading it again. While it downloads and copies itself into place, SynSeeder-update.exe.part and SynSeeder.exe.new can also appear here for a short time. | The first run after the update is in place deletes it |
+| A copy of the app | `%LOCALAPPDATA%\SynSeeder\SynSeeder.exe` | Made when you press Seed now, or Save with Seed automatically or Seed when pinged ticked, so the scheduled tasks keep working if you move or delete your download. Newer versions from GitHub replace it. | You delete it |
+| An update being installed | `%LOCALAPPDATA%\SynSeeder\SynSeeder-update.exe` | A newer version downloaded from GitHub. It copies itself over the app above and finishes that run. If something still has the app open, such as a SynSeeder window or a seed-call check started from it, the download stays here so a later run can finish installing it without downloading it again. While it downloads and copies itself into place, SynSeeder-update.exe.part and SynSeeder.exe.new can also appear here for a short time. | The first run after the update is in place deletes it |
 | Button pictures and fonts | `%LOCALAPPDATA%\SynSeeder\buttons\` and `%LOCALAPPDATA%\SynSeeder\fonts\` | Pictures of the game's buttons, which SynSeeder looks for on screen, and the two fonts its window uses (Inter and Barlow Condensed). They're downloaded from GitHub the first time they're needed, and used only if they match fingerprints built into the app. The fonts are only for SynSeeder's own window and aren't installed in Windows. Nothing about you. While a file downloads, a copy ending in `.part` can appear for a short time. If the fonts can't be downloaded, a small `download-failed.txt` in the fonts folder notes when, so the window waits a few hours before trying again. | You delete them |
 | Note of a failed update | `%APPDATA%\SynSeeder\update-failed.json` | Only if a new version fails to start: its version number and how many times it failed. After three failures SynSeeder skips that version and waits for the next one. | You delete it |
+| Note of seed calls | `%APPDATA%\SynSeeder\seed-calls.json` | Only with Seed when pinged on: the random number of the last seed call this PC acted on, when it last started a seed-call run, how many it started today and, if a check failed, when to try again. This is so it never acts on the same call twice or too often. | You delete it |
 | Scheduled task named SynSeeder | Windows Task Scheduler | Starts a run at your chosen time each day, under your Windows account and without admin rights. Windows stores your account name with the task. | You untick Seed automatically and press Save or Seed now |
+| Scheduled task named SynSeeder seed calls | Windows Task Scheduler | Only with Seed when pinged on: a quick check about once a minute while you're signed in, under your Windows account and without admin rights. Outside your hours, or if the PC is locked, the game is open or a run is going, it closes at once without going online. Windows stores your account name with the task. | You untick Seed when pinged and press Save or Seed now |
 
 On a work or school PC with a roaming profile, Windows may copy the `%APPDATA%` folder to your organisation's servers.
 
@@ -30,7 +34,8 @@ To play the game, SynSeeder reads a few things on your PC as it goes. It uses th
 
 - **The game's picture.** Every couple of seconds while joining, and about every 30 seconds once in, it captures the area where the game is drawn (or your whole main screen, if it can't find the game window) and compares it with pictures of the game's buttons. It keeps only a grey, shrunk copy of each capture in memory, until the next capture replaces it.
 - **Running programs.** It reads the names of running programs to find the game, and looks for SynSeeder's own hidden windows to find other SynSeeder runs (so it never runs twice and Stop seeding works). When another window keeps the game from coming to the front, it notes that program's name in the log.
-- **How long since you last used the mouse or keyboard.** Windows reports only the time of the last input, never what you typed or clicked. SynSeeder uses it to wait until you've left the PC alone for 15 seconds before bringing the game to the front.
+- **How long since you last used the mouse or keyboard.** Windows reports only the time of the last input, never what you typed or clicked. SynSeeder uses it to wait until you've left the PC alone for 15 seconds before bringing the game to the front. With Seed when pinged on, it also uses it to start a seed-call run on its own only if you haven't touched the mouse or keyboard for 5 minutes.
+- **Whether something is full screen,** only with Seed when pinged on. Windows says only whether a full-screen program or a presentation is on, not which program. If one is, SynSeeder asks you before a seed call starts the game.
 - **The Ctrl+Alt+End shortcut.** It registers this one shortcut to stop a run. Windows tells it only when that exact shortcut is pressed; it doesn't see any other keys.
 - **Your keyboard layout,** so it presses the right keys on any layout.
 - **Whether the PC is locked,** because it can't play on a locked screen.
@@ -48,12 +53,29 @@ SynSeeder itself makes only the requests below. None of them includes anything a
 | Pictures of the game's buttons, and the window's fonts | The first time they're needed, and again only if one goes missing or doesn't match | GitHub (`raw.githubusercontent.com`) | Your IP address, the time, and which of SynSeeder's files you're getting, for which version |
 | Is there a newer version? | At the start of each run | GitHub (`api.github.com`) | Your IP address, the time, and that the request came from "SynSeeder" |
 | Downloading the newer version | Only when there is one | GitHub | Your IP address, the time, and which version you're getting |
+| Has a seed been called? | Only with Seed when pinged on: about once a minute while you're signed in and inside your hours, and only while the PC is unlocked, the game is closed and no run is going | SynSeeder's seed-call service, which we run on Cloudflare Workers | Your IP address, the time, and that the request came from "SynSeeder". It carries no ID, name or version number |
 
-The answers hold only public information: the server's map, score and player counts, GitHub's release details, and SynSeeder's own files. We don't run the stats page. We couldn't find a privacy policy for it, so we can't tell you whether its owners keep a record of these requests. Requests to it pass through Cloudflare, which handles them for whoever runs the stats page ([Cloudflare's privacy policy](https://www.cloudflare.com/privacypolicy/)). GitHub handles its requests under the [GitHub General Privacy Statement](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement).
+The answers hold nothing personal: the server's map, score and player counts, GitHub's release details, SynSeeder's own files, and, from the seed-call service, only a random number for the latest seed call and how many seconds old it is.
+
+We run the seed-call service on Cloudflare Workers, and the same service runs the bot. Cloudflare handles each request to it for us ([Cloudflare's privacy policy](https://www.cloudflare.com/privacypolicy/)). We've switched off its request logs and we don't save single requests, so we keep no record of who checked or when. In Cloudflare's dashboard we look only at totals, such as how many requests came in a day. If something breaks, we may watch requests live for a short time to fix it, which can show IP addresses, but we don't save them. Cloudflare may still keep its own records of requests for a while, for example to stop attacks. Because the app checks about once a minute, those records could show when your PC was on and unlocked. Cloudflare runs the service in data centres around the world, so your IP address and Discord details can be handled outside your country, including in the United States. Cloudflare says it follows the EU-U.S. Data Privacy Framework for this.
+
+We don't run the stats page. We couldn't find a privacy policy for it, so we can't tell you whether its owners keep a record of these requests. Requests to it pass through Cloudflare, which handles them for whoever runs the stats page ([Cloudflare's privacy policy](https://www.cloudflare.com/privacypolicy/)). GitHub handles its requests under the [GitHub General Privacy Statement](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement).
 
 The **Terms of Service** and **Privacy Policy** links at the bottom of SynSeeder's window open these documents on GitHub in your web browser. That happens only when you click one.
 
 **Turning updates off.** Press **Save** once in SynSeeder so the settings file exists, then close SynSeeder. Paste `%APPDATA%\SynSeeder` into File Explorer's address bar and open `config.json` in Notepad. Change `"auto_update": true` to `"auto_update": false` and save the file. Type false in small letters with no quote marks around it, and leave everything else as it is. If the file has a mistake in it, SynSeeder ignores the whole file and updates come back on.
+
+## The SynSeeder bot on Discord
+
+The SynSeeder bot lets people with the Seed Caller role call a seed with the **/seed** command. We add it to one Discord server only, the one where we run SynSeeder's channel. It runs on the same Cloudflare service as the seed calls. It only gets /seed commands, and it doesn't read other messages in the server.
+
+When someone uses /seed, Discord sends the bot what it sends with any command. That includes their Discord user ID, their names (user name, display name and server nickname), profile picture, roles and permissions, when they joined the server, and the language their Discord is set to. It also includes the server and channel it was used in. The bot uses the roles, server and channel to check that the person may call a seed there, and the ID to name them in its reply. It ignores the rest. Cloudflare handles all of it for us, with request logs switched off.
+
+The bot then reads the game server's public player count. It calls a seed only if the server has fewer than 50 players, no seed was called in the last 30 minutes, and fewer than 4 were called today. A call lasts 15 minutes. If the bot turns a call down, only the caller sees why. If it calls a seed, it replies in the channel. The reply names the person who called and can ping the Seeders role. That reply is the only record of who called, and the bot doesn't save a copy. Server moderators can delete it like any other message.
+
+The bot keeps only what its limits need: a random number for the latest seed call, when it was made, and how many calls were made today. It keeps nothing else about the people who use /seed. It doesn't know which Discord users have Seed when pinged ticked.
+
+Everything you do in Discord, including using /seed and seeing the bot's reply, is also handled by Discord under its own [privacy policy](https://discord.com/privacy).
 
 ## The game, Steam or Epic, and the server
 
@@ -73,23 +95,23 @@ If you send them to us privately, on [Discord](https://discord.com/users/1327217
 
 ## Removing everything SynSeeder put on your PC
 
-Four steps remove all of it. If you've already deleted the app, do this instead of step 1: open Task Scheduler from the Start menu and delete the task named SynSeeder.
+Four steps remove all of it. If you've already deleted the app, do this instead of step 1: open Task Scheduler from the Start menu and delete the tasks named SynSeeder and SynSeeder seed calls.
 
-1. Open SynSeeder, press **Stop seeding** if a run is going, untick **Seed automatically** and press **Save**. This deletes the scheduled task.
+1. Open SynSeeder, press **Stop seeding** if a run is going, untick **Seed automatically** and **Seed when pinged**, and press **Save**. This deletes the scheduled tasks.
 2. Close SynSeeder.
 3. Delete the folders `%APPDATA%\SynSeeder` and `%LOCALAPPDATA%\SynSeeder` (paste each path into File Explorer's address bar to find it).
 4. Delete the SynSeeder.exe you downloaded.
 
-Unless you've sent us files, we never receive any of this, so there's nothing to delete on our side.
+Unless you've sent us files, we never receive any of this, so there's nothing to delete on our side. The seed-call service and the bot keep nothing about you either. The only trace is the bot's reply to /seed in Discord, which names whoever called.
 
 ## Your rights, children, changes and contact
 
-**Your rights.** Privacy laws such as the GDPR and the CCPA give you rights over personal data that a developer holds about you. We don't hold any, unless you've sent us your log or screenshots. If you have, message us privately on [Discord](https://discord.com/users/132721731096936448) and we'll tell you what we still have and delete it. Everything else listed above is on your PC and under your control.
+**Your rights.** Privacy laws such as the GDPR and the CCPA give you rights over personal data that a developer holds about you. We don't hold any, unless you've sent us your log or screenshots. The seed-call service sees your IP address, and the bot sees your Discord details when you use /seed, but only for a moment, and we don't keep them. If you've sent us files, message us privately on [Discord](https://discord.com/users/132721731096936448) and we'll tell you what we still have and delete it. The bot's replies to /seed are Discord messages. To have one removed, ask a moderator of that server, or message us on Discord and we'll help get it removed. Everything else listed above is on your PC and under your control.
 
-**Children.** SynSeeder collects nothing from anyone, children included. Use it only if you're 18 or older.
+**Children.** SynSeeder and its bot aren't meant for children. Use the app, and /seed, only if you're 18 or older. The Seed Caller role should go only to adults.
 
-**Changes.** If a new version will collect, keep or send anything new, we'll update this policy at least 14 days before we release it. We'll change the date at the top and say so in the release notes. Updates install themselves, so check this page now and then, or turn updates off if you'd rather decide for yourself.
+**Changes.** If the app, the seed-call service or the bot will collect, keep or send anything new, we'll update this policy at least 14 days before the change. That includes turning the service's request logs back on. We'll change the date at the top, add a note there saying what's coming, and say so in the release notes when it comes out. Updates install themselves, so check this page now and then, or turn updates off if you'd rather decide for yourself.
 
-**Contact.** Questions about this policy: open an issue at [github.com/waterjugs/SYN-Seeder/issues](https://github.com/waterjugs/SYN-Seeder/issues). For anything about your own files, message us privately on [Discord](https://discord.com/users/132721731096936448) instead. Issues are public, so don't paste your log or screenshots there without checking them first.
+**Contact.** Questions about this policy: open an issue at [github.com/waterjugs/SYN-Seeder/issues](https://github.com/waterjugs/SYN-Seeder/issues). For anything about your own files, message us privately on [Discord](https://discord.com/users/132721731096936448) instead. Issues are public, so don't paste your log or screenshots there without checking them first. To report a problem with the bot, or someone misusing /seed, open an issue or message us on Discord. We read every report and act on the ones that need it.
 
 Using SynSeeder is also covered by the [SynSeeder Terms of Service](TERMS.md).
