@@ -320,6 +320,17 @@ class SeedCallTests {
         AssertEq([env.fetches, SeedCallTests.State().retry_after], [3, ""])
     }
 
+    ; A failure long after the last (outside the hours in between, say) starts
+    ; a new string: the short wait again, and logged.
+    static Test_a_failure_long_after_the_last_starts_again() {
+        env := FakeCallEnv(Error("offline"))
+        Logs.capture := []
+        SeedCallTests.Check(env)
+        env.Advance(21 * 60)
+        SeedCallTests.Check(env)
+        AssertEq([env.fetches, SeedCallTests.State().retry_after, Logs.capture.Length], [2, "20261123192600", 2])
+    }
+
     ; A retry time far off came from the clock going back: it's ignored.
     static Test_a_far_off_retry_time_is_ignored() {
         env := FakeCallEnv()
@@ -378,14 +389,49 @@ class SeedCallTests {
         Assert(!FileExist(SeedCalls.StatePath ".tmp"))
     }
 
-    static Test_a_broken_note_is_ignored() {
-        for text in ["{not json", "[]", '{"last_call": "ABC", "last_run": "2026-13-01T00:00:00Z", "runs_today": -1, "retry_after": 5}',
+    static Test_a_broken_item_is_ignored() {
+        for text in ['{"last_call": "ABC", "last_run": "2026-13-01T00:00:00Z", "runs_today": -1, "retry_after": 5}',
             '{"last_run": "2026-11-23T19:00:42"}', '{"last_run": "2026-11-23 19:00:42Z"}'] {
             try FileDelete(SeedCalls.StatePath)
             FileAppend(text, SeedCalls.StatePath, "UTF-8-RAW")
             state := SeedCallTests.State()
-            AssertEq([state.last_call, state.last_run, state.runs_today, state.retry_after], ["", "", 0, ""], text)
+            AssertEq([state.last_call, state.last_run, state.runs_today, state.retry_after, state.broken], ["", "", 0, "", false], text)
         }
+    }
+
+    ; A note that isn't one could have held the call just acted on, so the
+    ; day is taken as full: no going online until tomorrow, and logged once.
+    static Test_a_broken_note_rests_until_tomorrow() {
+        for text in ["{not json", "[]", ""] {
+            try FileDelete(SeedCalls.StatePath)
+            FileAppend(text, SeedCalls.StatePath, "UTF-8-RAW")
+            Assert(SeedCallTests.State().broken, "broken: " text)
+            env := FakeCallEnv(SeedCallTests.Call())
+            Logs.capture := []
+            SeedCallTests.Check(env)
+            env.Advance(60)
+            SeedCallTests.Check(env)
+            state := SeedCallTests.State()
+            AssertEq([env.fetches, env.started, Logs.capture.Length], [0, 0, 1], text)
+            AssertEq([state.last_call, state.last_run, state.runs_today, state.broken], ["", "20261123190000", SeedCalls.PER_DAY, false], text)
+            env.Advance(19 * 3600)  ; 09:01 the next day
+            SeedCallTests.Check(env)
+            AssertEq([env.fetches, env.started], [1, 1], text)
+        }
+    }
+
+    ; A note another program holds shut is left alone, and nothing goes online.
+    static Test_a_note_that_cant_be_read_waits() {
+        SeedCalls.SaveState({last_call: CALL_A, last_run: "", runs_today: 1, retry_after: ""})
+        before := FileRead(SeedCalls.StatePath, "UTF-8")
+        env := FakeCallEnv(SeedCallTests.Call())
+        Logs.capture := []
+        held := FileOpen(SeedCalls.StatePath, "r -rwd")
+        try
+            AssertEq([SeedCallTests.State(), SeedCallTests.Check(env), env.fetches, Logs.capture.Length], ["", 0, 0, 0])
+        finally
+            held.Close()
+        AssertEq(FileRead(SeedCalls.StatePath, "UTF-8"), before)
     }
 
     ; The question window: no answer, or a reason to stop asking, closes it.

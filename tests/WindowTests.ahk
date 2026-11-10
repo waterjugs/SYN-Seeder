@@ -312,10 +312,19 @@ class WindowTests {
         check(w, calls) {
             Patches.Set(SeedLock, "Running", (*) => true)
             w.SeedNow()
-            AssertEq(calls, [])
-            AssertEq(WindowTests.StatusOf(w), "Already seeding.")
+            AssertEq(calls, ["schedule 06:35"])
+            AssertEq(WindowTests.StatusOf(w), "Saved. Already seeding.")
         }
         WindowTests.With(check)
+        ; Unticked during a run, Seed now still removes the seed-calls task.
+        check2(w, calls) {
+            Patches.Set(SeedLock, "Running", (*) => true)
+            w.TogglePinged()
+            w.SeedNow()
+            AssertEq(calls, ["schedule 06:35", "unschedule calls"])
+            AssertEq(SeederConfig.Load().seed_when_pinged, 0)
+        }
+        WindowTests.With(check2, , , true)
     }
 
     static Test_seed_now_when_the_run_wont_start() {
@@ -726,6 +735,27 @@ class WindowTests {
         WindowTests.With((w, calls) => AssertEq([w.pingFrom, w.pingUntil], ["07", "23"]), config)
         config.pinged_from := Map(), config.pinged_until := 9  ; a hand-edited file
         WindowTests.With((w, calls) => AssertEq([w.pingFrom, w.pingUntil], ["08", "23"]), config)
+        config.pinged_from := "7:5", config.pinged_until := "24:00"  ; not times, so as the check reads them
+        WindowTests.With((w, calls) => AssertEq([w.pingFrom, w.pingUntil], ["08", "23"]), config)
+    }
+
+    ; Minutes set by hand stay until that hour is changed in the window.
+    static Test_hand_set_minutes_are_kept() {
+        config := SeederConfig()
+        config.pinged_from := "07:30", config.pinged_until := "22:45"
+        check(w, calls) {
+            w.TogglePinged()
+            w.Save()
+            saved := SeederConfig.Load()
+            AssertEq([saved.pinged_from, saved.pinged_until], ["07:30", "22:45"])
+            Assert(InStr(WindowTests.StatusOf(w), "when pinged from 07:30 to 22:45."), WindowTests.StatusOf(w))
+            w.OpenPicker("pingFrom")
+            w.Pick(10)  ; "09"
+            w.Save()
+            saved := SeederConfig.Load()
+            AssertEq([saved.pinged_from, saved.pinged_until], ["09:00", "22:45"])
+        }
+        WindowTests.With(check, config)
     }
 
     static Test_tab_goes_down_the_rows() {

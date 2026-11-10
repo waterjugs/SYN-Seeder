@@ -282,13 +282,13 @@ class SetupWindow {
             : ampm(this.pingFrom) " " Chr(0x2013) " " ampm(this.pingUntil)
     }
 
-    ; The hour of "HH:MM" as two digits, or ``default`` if it isn't a time.
-    static _Hour(time, default) {
-        if !(time is String)
-            return default
-        parts := StrSplit(time, ":")
-        return parts.Length = 2 && IsInteger(parts[1]) && parts[1] >= 0 && parts[1] < 24 ? Format("{:02d}", parts[1]) : default
-    }
+    ; The hour of "HH:MM" as two digits, read as the check reads it, or
+    ; ``default`` if it isn't a time.
+    static _Hour(time, default) => Format("{:02d}", SeedCalls.MinuteOfDay(time, default * 60) // 60)
+
+    ; ``time`` as it is if it's a time in ``hour``, so minutes set by hand in
+    ; the settings file are kept; else ``hour`` ":00".
+    static _Time(time, hour) => SeedCalls.MinuteOfDay(time, -60) // 60 = hour ? time : hour ":00"
 
     ; Shows the player count, or ``note`` when it isn't known ("").
     ShowServer(count, note := "") {
@@ -444,7 +444,8 @@ class SetupWindow {
         this.config.start_time := this.hour ":" this.minute
         this.config.launcher := this.launcher
         this.config.seed_when_pinged := this.pinged ? true : false
-        this.config.pinged_from := this.pingFrom ":00", this.config.pinged_until := this.pingUntil ":00"
+        this.config.pinged_from := SetupWindow._Time(this.config.pinged_from, this.pingFrom)
+        this.config.pinged_until := SetupWindow._Time(this.config.pinged_until, this.pingUntil)
         problem := ""
         try {
             this.config.Save()
@@ -491,7 +492,8 @@ class SetupWindow {
         if this.busy
             return
         if SeedLock.Running() || (this.spawned && SeedLock.Alive(this.spawned)) {
-            this.Status("Already seeding.")
+            if this.Save()  ; Seed now saves the settings whatever happens (TERMS.md)
+                this.Status("Saved. Already seeding.")
             return
         }
         this.Save()

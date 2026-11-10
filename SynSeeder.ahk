@@ -60,8 +60,8 @@ Main() {
         ; Before anything else: once a minute, this mustn't log a broken
         ; settings file, and it ends Windows' "app starting" pointer at once.
         Sleep(-1)
-        Logs.Open()
         try {
+            Logs.Open()  ; in here: making the app's folder can fail too
             code := SeedCalls.Check()
         } catch as err {  ; no console in the built exe, and no dialog every minute either
             Logs.Exception("Seed call: the check crashed", err)

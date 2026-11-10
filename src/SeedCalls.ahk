@@ -12,8 +12,9 @@
 ;
 ; Without going online, it does nothing while the box is off, outside the
 ; player's hours, while the PC is locked, the game is open or a run is going,
-; after 3 seed-call runs in a day, within 30 minutes of the last one, and for
-; a few minutes after the service couldn't be reached. TERMS.md and
+; after 3 seed-call runs in a day, within 30 minutes of the last one, for
+; a few minutes after the service couldn't be reached, and for the rest of
+; the day after finding seed-calls.json broken. TERMS.md and
 ; PRIVACY.md promise all of this and what seed-calls.json holds: change them,
 ; at least 14 days ahead, before changing what it does.
 
@@ -47,13 +48,26 @@ class SeedCalls {
             return 0
         state := SeedCalls.LoadState()
         now := env.NowUtc()
+        if state = ""  ; can't be read just now: next minute, perhaps
+            return 0
+        if state.broken {
+            ; What it held is lost. Taken as a day that's had all its runs, the
+            ; last just now, it can't let a call be acted on twice or too often,
+            ; and it's back to normal tomorrow. Logged once: the note is right again.
+            if SeedCalls.SaveState({last_call: "", last_run: now, runs_today: SeedCalls.PER_DAY, retry_after: ""})
+                Logs.Warning("Seed call: seed-calls.json was broken, so no seed-call runs until tomorrow")
+            return 0
+        }
         if SeedCalls._Resting(state, now) || SeedCalls.RunsToday(state, env) >= SeedCalls.PER_DAY
             || SeedCalls._TooSoon(state, now)
             return 0
         try {
             reply := env.Fetch()
         } catch as err {
+            ; The first failure of a string: none before, or the last long ago
+            ; (or "ahead", from a clock change), not just before this check.
             first := state.retry_after = ""
+                || Abs(DateDiff(now, state.retry_after, "Seconds")) > SeedCalls.RETRY_AGAIN_MINUTES * 60
             state.retry_after := DateAdd(now, first ? SeedCalls.RETRY_MINUTES : SeedCalls.RETRY_AGAIN_MINUTES, "Minutes")
             SeedCalls.SaveState(state)
             if first
@@ -249,16 +263,24 @@ class SeedCalls {
     ; {last_call, last_run, runs_today, retry_after}: the last call acted on,
     ; when the last seed-call run started and how many started that day, and
     ; when to try the service again. Times are UTC timestamps, "" when unset.
-    ; A missing or broken file, or an item that isn't right, gives the empty value.
+    ; A missing file, or an item that isn't right, gives the empty value; a
+    ; file that isn't a note at all gives it with ``broken`` true (see Check),
+    ; and one that can't be read, "".
     static LoadState(path := "") {
         path := path != "" ? path : SeedCalls.StatePath
-        state := {last_call: "", last_run: "", runs_today: 0, retry_after: ""}
+        state := {last_call: "", last_run: "", runs_today: 0, retry_after: "", broken: false}
+        if !FileExist(path)
+            return state
         try
-            data := FileExist(path) ? Json.Load(FileRead(path, "UTF-8")) : ""
+            text := FileRead(path, "UTF-8")
         catch
+            return ""
+        try
+            data := Json.Load(text)
+        if !(IsSet(data) && data is Map) {
+            state.broken := true
             return state
-        if !(data is Map)
-            return state
+        }
         item(name) => data.Has(name) ? data[name] : ""
         call := item("last_call")
         if call is String && RegExMatch(call, "D)^[0-9a-f]{32}$")
@@ -279,7 +301,12 @@ class SeedCalls {
             "runs_today", state.runs_today, "retry_after", stamp(state.retry_after))
         try {
             temp := path ".tmp"
-            FileOpen(temp, "w", "UTF-8-RAW").Write(Json.Dump(data, "  ", ["last_call", "last_run", "runs_today", "retry_after"]))
+            text := Json.Dump(data, "  ", ["last_call", "last_run", "runs_today", "retry_after"])
+            file := FileOpen(temp, "w", "UTF-8-RAW")
+            written := file.Write(text)
+            file.Close()
+            if written != StrPut(text, "UTF-8") - 1  ; a full disk, say: never put half a note in place
+                throw Error("only " written " bytes written")
             ReplaceFile(temp, path)
             return true
         } catch as err {
