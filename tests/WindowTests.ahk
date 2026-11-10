@@ -2,13 +2,17 @@
 ; happens: the daily task, the run lock, starting a run and the game are faked.
 
 class WindowTests {
-    ; A hidden window on settings 06:35 / Epic, with the daily task scheduled.
-    ; Returns {w, calls}; calls lists what it asked of the task, runs and game.
-    static Make(config := "", scheduled := true, scale := "") {
-        calls := []
+    ; A hidden window on settings 06:35 / Epic, with the daily task scheduled
+    ; and, with ``pinged``, Seed when pinged on and its task there.
+    ; Returns {w, calls}; calls lists what it asked of the tasks, runs and game.
+    static Make(config := "", scheduled := true, scale := "", pinged := false) {
+        calls := [], callsTask := {there: pinged}
         Patches.Set(DailyTask, "IsScheduled", (*) => scheduled)
         Patches.Set(DailyTask, "Schedule", (this, start) => calls.Push("schedule " start))
         Patches.Set(DailyTask, "Unschedule", (*) => calls.Push("unschedule"))
+        Patches.Set(DailyTask, "CallsScheduled", (*) => callsTask.there)
+        Patches.Set(DailyTask, "ScheduleCalls", (*) => (calls.Push("schedule calls"), callsTask.there := true))
+        Patches.Set(DailyTask, "UnscheduleCalls", (*) => callsTask.there ? (calls.Push("unschedule calls"), callsTask.there := false) : "")
         Patches.Set(SetupWindow.Prototype, "StartRun", (*) => (calls.Push("seed"), 4242))
         Patches.Set(SetupWindow.Prototype, "Open", (this, url) => calls.Push("open " url))
         Patches.Set(SeedLock, "Running", (*) => false)
@@ -25,6 +29,8 @@ class WindowTests {
             config := SeederConfig()
             config.start_time := "06:35", config.launcher := "epic"
         }
+        if pinged
+            config.seed_when_pinged := true
         return {w: SetupWindow(config, false, scale), calls: calls}
     }
 
@@ -34,8 +40,8 @@ class WindowTests {
     }
 
     ; Runs ``test`` with a fresh window, and closes the window after.
-    static With(test, config := "", scheduled := true) {
-        made := WindowTests.Make(config, scheduled)
+    static With(test, config := "", scheduled := true, pinged := false) {
+        made := WindowTests.Make(config, scheduled, , pinged)
         try
             test(made.w, made.calls)
         finally
@@ -55,7 +61,8 @@ class WindowTests {
     static Test_not_scheduled_says_how() {
         WindowTests.With((w, calls) => (
             Assert(!w.enabled),
-            AssertEq(WindowTests.StatusOf(w), "Not scheduled. Tick " Chr(0x201C) "Seed automatically" Chr(0x201D) " and Save.")), , false)
+            AssertEq(WindowTests.StatusOf(w), "Not scheduled. Tick " Chr(0x201C) "Seed automatically" Chr(0x201D) " or "
+                . Chr(0x201C) "Seed when pinged" Chr(0x201D) " and Save.")), , false)
     }
 
     static Test_clock_says_am_or_pm() {
@@ -607,6 +614,131 @@ class WindowTests {
         WindowTests.With(check)
     }
 
+    ; Seed when pinged
+
+    static Test_seed_when_pinged_starts_off() {
+        WindowTests.With((w, calls) => (
+            AssertEq([w.pinged, w.pingFrom, w.pingUntil, w.pingClock.Text], [false, "08", "23", "8 AM " Chr(0x2013) " 11 PM"]),
+            Assert(!InStr(WindowTests.StatusOf(w), "pinged"), WindowTests.StatusOf(w))))
+    }
+
+    static Test_seed_when_pinged_shows_what_is_set_up() {
+        WindowTests.With((w, calls) => (
+            Assert(w.pinged, "Seed when pinged should be ticked"),
+            AssertEq(WindowTests.StatusOf(w), "Seeds when pinged on Discord, from 08:00 to 23:00. Leave the PC on, signed in and unlocked.")), , false, true)
+        WindowTests.With((w, calls) => (
+            Assert(InStr(WindowTests.StatusOf(w), "Seeds every day at 06:35, and when pinged from 08:00 to 23:00. ") = 1, WindowTests.StatusOf(w))), , true, true)
+    }
+
+    ; An older SynSeeder's Save drops the setting but leaves the task (and
+    ; its checks do nothing): the box is unticked, and Save removes the task.
+    static Test_seed_when_pinged_off_in_the_settings_is_off() {
+        made := WindowTests.Make(, , , true)
+        w := made.w, calls := made.calls
+        try {
+            w.config.seed_when_pinged := false
+            w.Dispose()
+            w := SetupWindow(w.config, false)
+            Assert(!w.pinged, "ticked although the settings say off")
+            Assert(!InStr(WindowTests.StatusOf(w), "pinged"), WindowTests.StatusOf(w))
+            w.Save()
+            AssertEq(calls, ["schedule 06:35", "unschedule calls"])
+        } finally {
+            w.Dispose()
+        }
+    }
+
+    ; On in the settings but the task gone (deleted in Task Scheduler): unticked.
+    static Test_seed_when_pinged_without_its_task_is_unticked() {
+        config := SeederConfig()
+        config.seed_when_pinged := true
+        WindowTests.With((w, calls) => Assert(!w.pinged), config)
+    }
+
+    static Test_save_with_seed_when_pinged_sets_up_its_task() {
+        check(w, calls) {
+            w.TogglePinged()
+            w.OpenPicker("pingFrom")
+            w.Pick(19)  ; "18"
+            w.OpenPicker("pingUntil")
+            w.Pick(3)   ; "02", after midnight
+            AssertEq([w.pingFrom, w.pingUntil, w.pingClock.Text, w.pingUntilField.Text], ["18", "02", "6 PM " Chr(0x2013) " 2 AM", "02"])
+            Assert(w.Save())
+            AssertEq(calls, ["schedule 06:35", "schedule calls"])
+            saved := SeederConfig.Load()
+            AssertEq([saved.seed_when_pinged, saved.pinged_from, saved.pinged_until], [1, "18:00", "02:00"])
+            Assert(InStr(FileRead(SeederConfig.DefaultPath, "UTF-8"), '"seed_when_pinged": true,'))
+            Assert(InStr(WindowTests.StatusOf(w), "Saved. Seeds every day at 06:35, and when pinged from 18:00 to 02:00.") = 1, WindowTests.StatusOf(w))
+            w.TogglePinged()
+            w.Save()
+            AssertEq(calls, ["schedule 06:35", "schedule calls", "schedule 06:35", "unschedule calls"])
+            AssertEq(SeederConfig.Load().seed_when_pinged, 0)
+        }
+        WindowTests.With(check)
+    }
+
+    static Test_seed_when_pinged_all_day() {
+        check(w, calls) {
+            w.TogglePinged()
+            w.OpenPicker("pingUntil")
+            w.Pick(9)  ; "08", the same as from
+            AssertEq(w.pingClock.Text, "All day")
+            w.Save()
+            AssertEq(WindowTests.StatusOf(w), "Saved. Seeds when pinged on Discord, at any hour. Leave the PC on, signed in and unlocked.")
+        }
+        WindowTests.With(check, , false)
+    }
+
+    static Test_seed_now_sets_up_seed_when_pinged_too() {
+        check(w, calls) {
+            w.TogglePinged()
+            w.SeedNow()
+            AssertEq(calls, ["schedule 06:35", "schedule calls", "seed"])
+        }
+        WindowTests.With(check)
+    }
+
+    ; A problem with one task doesn't stop the other being set up or removed.
+    static Test_seed_when_pinged_error_is_shown() {
+        check(w, calls) {
+            Patches.Set(DailyTask, "ScheduleCalls", (*) => WindowTests.Raise("Access is denied."))
+            Logs.capture := []
+            w.TogglePinged()
+            Assert(!w.Save())
+            AssertEq(calls, ["schedule 06:35"])
+            AssertEq([WindowTests.StatusOf(w), w.statusColor], ["Couldn't set up Seed when pinged: Access is denied.", Look.FLARE])
+        }
+        WindowTests.With(check)
+        check2(w, calls) {
+            Patches.Set(DailyTask, "Schedule", (*) => WindowTests.Raise("Access is denied."))
+            Logs.capture := []
+            w.TogglePinged()
+            Assert(!w.Save())
+            AssertEq(calls, ["unschedule calls"])
+            AssertEq(WindowTests.StatusOf(w), "Couldn't set up the schedule: Access is denied.")
+        }
+        WindowTests.With(check2, , , true)
+    }
+
+    static Test_odd_pinged_hours_are_tidied() {
+        config := SeederConfig()
+        config.pinged_from := "7:30", config.pinged_until := "soon"
+        WindowTests.With((w, calls) => AssertEq([w.pingFrom, w.pingUntil], ["07", "23"]), config)
+        config.pinged_from := Map(), config.pinged_until := 9  ; a hand-edited file
+        WindowTests.With((w, calls) => AssertEq([w.pingFrom, w.pingUntil], ["08", "23"]), config)
+    }
+
+    static Test_tab_goes_down_the_rows() {
+        check(w, calls) {
+            order := []
+            for ctrl in w.gui
+                if ctrl.Type = "Button"
+                    order.Push(ctrl.Text)
+            AssertEq(Slice(order, 1, 8), ["06", "35", "Steam", "Epic", "Seed automatically", "Seed when pinged", "08", "23"])
+        }
+        WindowTests.With(check)
+    }
+
     static Test_launcher_chips_and_automatic_box() {
         check(w, calls) {
             w.ChooseLauncher("steam")
@@ -799,6 +931,9 @@ class WindowTests {
                 w.clock.GetPos(&cx, , &cw)
                 w.hourField.GetPos(&hx)
                 Assert(cx + cw <= hx, "clock overlaps the hour picker at " scale)
+                w.pingClock.GetPos(&cx, , &cw)
+                w.pingFromField.GetPos(&hx)
+                Assert(cx + cw <= hx, "pinged hours overlap their picker at " scale)
                 w.steamChip.GetPos(&sx, , &sw)
                 w.epicChip.GetPos(&ex)
                 Assert(sx + sw < ex, "chips overlap at " scale)

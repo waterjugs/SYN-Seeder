@@ -24,6 +24,7 @@
 #Include ..\src\Runner.ahk
 #Include ..\src\SeedLock.ahk
 #Include ..\src\DailyTask.ahk
+#Include ..\src\SeedCalls.ahk
 #Include ..\src\Updater.ahk
 #Include ..\src\FontFiles.ahk
 #Include ..\src\Look.ahk

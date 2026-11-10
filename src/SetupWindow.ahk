@@ -1,6 +1,6 @@
 ; The window you get by double-clicking SynSeeder.exe: the server's player
-; count, the daily start time, Steam or Epic, and buttons to save, seed now
-; and stop seeding. Laid out like the first (Python) SynSeeder's window;
+; count, the daily start time, Steam or Epic, Seed when pinged and its hours,
+; and buttons to save, seed now and stop seeding. Laid out like the first (Python) SynSeeder's window;
 ; positions are in pixels at 100% scaling and grow with Windows' scaling.
 
 class SetupWindow {
@@ -29,13 +29,18 @@ class SetupWindow {
         this.exitAfterWatch := false  ; the window was closed during that watch: exit when it ends
         this.request := ""        ; the player-count request in flight
         this.requestAt := 0
-        this.picker := ""         ; the open hour or minute grid
+        this.picker := ""         ; the open grid of hours or minutes
         this.pickerClosed := ["", 0]
         parts := StrSplit(config.start_time, ":")
         this.hour := parts.Length = 2 && IsInteger(parts[1]) && parts[1] >= 0 && parts[1] < 24 ? Format("{:02d}", parts[1]) : "07"
         this.minute := parts.Length = 2 && SetupWindow._Has(SetupWindow.MINUTES, parts[2]) ? parts[2] : "00"
         this.launcher := config.launcher = "epic" ? "epic" : "steam"
         this.enabled := DailyTask.IsScheduled()
+        ; Ticked only if the settings say so and the task is there: an older
+        ; SynSeeder's Save drops the setting but leaves the task.
+        this.pinged := SeedCalls.On(config) && DailyTask.CallsScheduled()
+        this.pingFrom := SetupWindow._Hour(config.pinged_from, "08")
+        this.pingUntil := SetupWindow._Hour(config.pinged_until, "23")
         Look.scale := scale != "" ? scale : A_ScreenDPI / 96
         this._Build()
         this.Status(this.ScheduleText())
@@ -95,7 +100,7 @@ class SetupWindow {
 
         ; When and how to seed: a row each, the setting on the left and its control against the right edge
         rowH := px(46), rows := []
-        loop 3 {
+        loop 5 {
             this._Rule(M, y, CW, line)
             rows.Push(y + line)
             y += line + rowH
@@ -127,6 +132,24 @@ class SetupWindow {
         top := rows[3]  ; the whole row ticks it
         this.autoBox := this._Button(M, top, CW, rowH, "Seed automatically"
             , (c, st) => Paint.Check(c, "Seed automatically", f.body, this.enabled, st, baseline(0)), (*) => this.ToggleAutomatic())
+
+        top := rows[4]
+        this.pingBox := this._Button(M, top, CW, rowH, "Seed when pinged"
+            , (c, st) => Paint.Check(c, "Seed when pinged", f.body, this.pinged, st, baseline(0)), (*) => this.TogglePinged())
+
+        top := rows[5]  ; laid out like the first row
+        this._Label(f.body, Look.HAZE, M + pad, baseline(top) - f.body.ascent, f.body.Width("Only between") + 2, "Only between")
+        fieldY := top + (rowH - fieldH) // 2
+        untilX := M + CW - fieldW
+        andW := f.body.Width("and") + 2 * pad
+        andX := untilX - px(6) - andW
+        fromX := andX - px(6) - fieldW
+        rangeW := f.body.Width("12 AM " Chr(0x2013) " 12 PM") + 2 * pad
+        this.pingClock := this._Label(f.body, Look.MIST, fromX - px(12) - pad - rangeW, baseline(top) - f.body.ascent, rangeW, "", "Right")
+        this.pingFromField := this._Button(fromX, fieldY, fieldW, fieldH, this.pingFrom, (c, st) => Paint.Field(c, this.pingFrom, f.body, st), (*) => this.OpenPicker("pingFrom"))
+        this._Label(f.body, Look.HAZE, andX, baseline(top) - f.body.ascent, andW, "and", "Center")
+        this.pingUntilField := this._Button(untilX, fieldY, fieldW, fieldH, this.pingUntil, (c, st) => Paint.Field(c, this.pingUntil, f.body, st), (*) => this.OpenPicker("pingUntil"))
+        this.ShowPingHours()
         y += line + px(20)
 
         ; Actions: three equal buttons across the width
@@ -252,6 +275,21 @@ class SetupWindow {
         this.clock.Text := (Mod(h, 12) || 12) ":" this.minute " " (h < 12 ? "AM" : "PM")
     }
 
+    ; The pinged hours in AM and PM beside their pickers.
+    ShowPingHours() {
+        ampm(hour) => (Mod(Integer(hour), 12) || 12) " " (hour < 12 ? "AM" : "PM")
+        this.pingClock.Text := this.pingFrom = this.pingUntil ? "All day"
+            : ampm(this.pingFrom) " " Chr(0x2013) " " ampm(this.pingUntil)
+    }
+
+    ; The hour of "HH:MM" as two digits, or ``default`` if it isn't a time.
+    static _Hour(time, default) {
+        if !(time is String)
+            return default
+        parts := StrSplit(time, ":")
+        return parts.Length = 2 && IsInteger(parts[1]) && parts[1] >= 0 && parts[1] < 24 ? Format("{:02d}", parts[1]) : default
+    }
+
     ; Shows the player count, or ``note`` when it isn't known ("").
     ShowServer(count, note := "") {
         this.count := count
@@ -324,9 +362,19 @@ class SetupWindow {
     ; What the window does
 
     ScheduleText() {
-        if DailyTask.IsScheduled()
+        daily := DailyTask.IsScheduled()
+        pinged := SeedCalls.On(this.config) && DailyTask.CallsScheduled()
+        if pinged {
+            from := SeedCalls.MinuteOfDay(this.config.pinged_from, 8 * 60), upTo := SeedCalls.MinuteOfDay(this.config.pinged_until, 23 * 60)
+            hours := from = upTo ? "at any hour" : Format("from {:02d}:{:02d} to {:02d}:{:02d}", from // 60, Mod(from, 60), upTo // 60, Mod(upTo, 60))
+        }
+        if daily && pinged
+            return "Seeds every day at " this.config.start_time ", and when pinged " hours ". Leave the PC on, signed in and unlocked; if it's asleep at " this.config.start_time ", it runs when it wakes."
+        if daily
             return "Seeds every day at " this.config.start_time ". Leave the PC on, signed in and unlocked; if it's asleep it runs when it wakes."
-        return "Not scheduled. Tick " Chr(0x201C) "Seed automatically" Chr(0x201D) " and Save."
+        if pinged
+            return "Seeds when pinged on Discord, " hours ". Leave the PC on, signed in and unlocked."
+        return "Not scheduled. Tick " Chr(0x201C) "Seed automatically" Chr(0x201D) " or " Chr(0x201C) "Seed when pinged" Chr(0x201D) " and Save."
     }
 
     ; Fetches the player count without holding up the window. One fetch at a
@@ -390,10 +438,14 @@ class SetupWindow {
             this.Status("The run has ended.")
     }
 
-    ; Saves the settings and creates or removes the daily task. False if that failed.
+    ; Saves the settings and creates or removes the daily and seed-calls
+    ; tasks. False if any of that failed.
     Save(*) {
         this.config.start_time := this.hour ":" this.minute
         this.config.launcher := this.launcher
+        this.config.seed_when_pinged := this.pinged ? true : false
+        this.config.pinged_from := this.pingFrom ":00", this.config.pinged_until := this.pingUntil ":00"
+        problem := ""
         try {
             this.config.Save()
             if this.enabled
@@ -402,7 +454,22 @@ class SetupWindow {
                 DailyTask.Unschedule()
         } catch as err {
             Logs.Exception("Scheduling failed", err)
-            this.Status("Couldn't set up the schedule: " err.Message, Look.FLARE)
+            problem := "Couldn't set up the schedule: " err.Message
+        }
+        ; Done even if the above failed: unticked, the task must go whatever
+        ; the settings file says (a check reads that file, so it's off anyway).
+        try {
+            if this.pinged
+                DailyTask.ScheduleCalls()
+            else
+                DailyTask.UnscheduleCalls()
+        } catch as err {
+            Logs.Exception("Setting up Seed when pinged failed", err)
+            if problem = ""
+                problem := "Couldn't set up Seed when pinged: " err.Message
+        }
+        if problem != "" {
+            this.Status(problem, Look.FLARE)
             return false
         }
         this.Status("Saved. " this.ScheduleText())
@@ -600,6 +667,11 @@ class SetupWindow {
         Skin.Redraw(this.autoBox.Hwnd)
     }
 
+    TogglePinged(*) {
+        this.pinged := !this.pinged
+        Skin.Redraw(this.pingBox.Hwnd)
+    }
+
     OpenLog(*) {
         path := Logs.path != "" ? Logs.path : App.Dir "\seeder.log"
         if !FileExist(path)
@@ -641,7 +713,12 @@ class SetupWindow {
 
     ; The hour and minute grids
 
-    ; Opens the grid of hours or minutes under its picker.
+    ; The picker for ``which``: "hour", "minute", "pingFrom" or "pingUntil",
+    ; the window's properties holding their values.
+    _Field(which) => which = "hour" ? this.hourField : which = "minute" ? this.minuteField
+        : which = "pingFrom" ? this.pingFromField : this.pingUntilField
+
+    ; Opens the grid of hours or minutes under the picker for ``which``.
     OpenPicker(which) {
         if this.picker != "" {
             same := this.picker.which = which
@@ -653,12 +730,12 @@ class SetupWindow {
             return  ; the click on this picker is what closed its grid
         px(n) => Look.Px(n)
         f := this.fonts
-        values := which = "hour" ? SetupWindow.HOURS : SetupWindow.MINUTES
-        columns := which = "hour" ? 6 : 4
+        values := which = "minute" ? SetupWindow.MINUTES : SetupWindow.HOURS
+        columns := which = "minute" ? 4 : 6
         cell := {w: px(44), h: px(30)}
         inset := px(4), w := 2 * inset + columns * cell.w, h := 2 * inset + Ceil(values.Length / columns) * cell.h
-        field := which = "hour" ? this.hourField : this.minuteField
-        chosen := SetupWindow._Index(values, which = "hour" ? this.hour : this.minute)
+        field := this._Field(which)
+        chosen := SetupWindow._Index(values, this.%which%)
         pop := Gui("-Caption +ToolWindow -DPIScale +Owner" this.gui.Hwnd)
         pop.BackColor := Look.Hex(Look.SLATE)
         pop.MarginX := 0, pop.MarginY := 0
@@ -690,19 +767,16 @@ class SetupWindow {
             try ControlFocus(state.field)
     }
 
-    ; Sets the hour or minute to the grid's value number ``index``.
+    ; Sets the open grid's hour or minute to its value number ``index``.
     Pick(index) {
         state := this.picker
         if state = "" || index < 1 || index > state.values.Length
             return
         value := state.values[index]
-        if state.which = "hour"
-            this.hour := value, this.hourField.Text := value
-        else
-            this.minute := value, this.minuteField.Text := value
+        this.%state.which% := value, state.field.Text := value
         this.ClosePicker(true)
-        Skin.Redraw(this.hourField.Hwnd), Skin.Redraw(this.minuteField.Hwnd)
-        this.ShowClock()
+        Skin.Redraw(state.field.Hwnd)
+        this.ShowClock(), this.ShowPingHours()
     }
 
     ; The grid's value number under (x, y) in the grid, or 0.

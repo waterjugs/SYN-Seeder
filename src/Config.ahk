@@ -21,6 +21,11 @@ class SeederConfig {
         ["start_time", "07:00"],
         ; release builds install newer GitHub releases before a run
         ["auto_update", true],
+        ; Seed when pinged: a seed called with the Discord bot starts a run,
+        ; between these hours (24h, local time; the same hour twice is all day)
+        ["seed_when_pinged", false],
+        ["pinged_from", "08:00"],
+        ["pinged_until", "23:00"],
         ; timings, in seconds unless noted
         ["poll_seconds", 30],
         ["anti_afk_seconds", 60],
@@ -28,7 +33,7 @@ class SeederConfig {
         ["load_timeout", 240],
         ["max_restarts", 3],
         ["max_minutes", 240]]
-    static BOOLEANS := ["auto_update"]
+    static BOOLEANS := ["auto_update", "seed_when_pinged"]
 
     __New() {
         for field in SeederConfig.FIELDS
