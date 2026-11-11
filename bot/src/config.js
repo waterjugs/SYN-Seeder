@@ -44,7 +44,7 @@ export function readConfig(env) {
   // Left empty, the bot's reply pings nobody.
   const seeders = value('SEEDERS_ROLE_ID');
   let seedersRoleIds = seeders === '' ? [] : [...new Set(seeders.split(/[\s,]+/).filter(Boolean))];
-  if (seedersRoleIds.length > MAX_PING_ROLES || !seedersRoleIds.every(roleId => SNOWFLAKE.test(roleId))) {
+  if (seeders !== '' && (seedersRoleIds.length === 0 || seedersRoleIds.length > MAX_PING_ROLES || !seedersRoleIds.every(roleId => SNOWFLAKE.test(roleId)))) {
     problems.push('SEEDERS_ROLE_ID');
     seedersRoleIds = [];
   }

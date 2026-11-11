@@ -59,7 +59,7 @@ test('SEEDERS_ROLE_ID can name two roles, separated by a comma', () => {
 
 test('more roles than the Privacy Policy allows, or one that is not an ID, is reported and pings nobody', () => {
   assert.equal(MAX_PING_ROLES, 2);
-  for (const text of ['444444444444444444,555555555555555555,666666666666666666', '444444444444444444,Seeders', '444444444444444444,<@&555555555555555555>']) {
+  for (const text of [',', ' , ', '444444444444444444,555555555555555555,666666666666666666', '444444444444444444,Seeders', '444444444444444444,<@&555555555555555555>']) {
     const { config, problems } = readConfig({ ...good, SEEDERS_ROLE_ID: text });
     assert.deepEqual(problems, ['SEEDERS_ROLE_ID'], text);
     assert.deepEqual(config.seedersRoleIds, [], text);

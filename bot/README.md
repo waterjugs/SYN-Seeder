@@ -8,8 +8,9 @@ and it needs no new roles.
 1. A Syngineer types **/seed** in the SynSeeder channel.
 2. The bot checks the call (see below). If it's fine, it replies in the
    channel: "Time to hop in the Syndicate | Competitive Server to get it
-   seeded. Called by @name." It can also ping one or two roles, if you
-   choose them in step 6.
+   seeded". It can also ping one or two roles first, if you choose them in
+   step 6. The reply doesn't name the caller, but Discord shows who used
+   /seed above it, as it does for any command.
 3. Every PC with **Seed when pinged** ticked in SynSeeder (version 1.1.0 and
    later) checks the bot about once a minute. It sees the call and starts its
    normal seeding run if nobody is using that PC. If someone is, it asks
@@ -33,13 +34,14 @@ and only the person who typed /seed sees that answer.
   come after 3, so the bot calls a seed only while its reply can still get
   there in time.
 
-A call lasts 15 minutes. The bot's reply in the channel is the only record of
-who called. The bot keeps only the latest call's random number, when it was
-made, and how many calls were made that day, nothing about people. Its
-request logs are switched off. If something goes wrong at Cloudflare while
-a seed is being called, and the bot can't tell whether it went through, it
-says so in the channel and names who tried. The
-[Privacy Policy](../PRIVACY.md) promises all of this, so keep it that way.
+A call lasts 15 minutes. The bot's reply in the channel, with "used /seed"
+above it, is the only record of who called. The bot keeps only the latest
+call's random number, when it was made, and how many calls were made that
+day, nothing about people. Its request logs are switched off. If something
+goes wrong at Cloudflare while a seed is being called, and the bot can't tell
+whether it went through, it says so in the channel, without naming anyone.
+The [Privacy Policy](../PRIVACY.md) promises all of this, so keep it that
+way.
 
 ## Its web addresses
 

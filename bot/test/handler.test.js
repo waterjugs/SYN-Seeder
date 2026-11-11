@@ -95,14 +95,15 @@ test('signed junk is refused', async () => {
 
 // /seed
 
-test('a Syngineer calls a seed, and the reply pings the chosen role but not the caller', async () => {
+test('a Syngineer calls a seed, and the reply pings the chosen role, without naming the caller', async () => {
   const deps = makeDeps(keys);
   const { status, body } = await run(deps, seedCommand());
   assert.equal(status, 200);
   assert.equal(body.type, 4);
   assert.equal(body.data.flags, undefined, 'the call is public');
-  assert.equal(body.data.content, `<@&${SEEDERS_ROLE}> Time to hop in the Syndicate | Competitive Server to get it seeded. Called by <@${CALLER}>.`);
-  assert.equal(body.data.content, `<@&${SEEDERS_ROLE}> ${CALL_TEXT} Called by <@${CALLER}>.`);
+  assert.equal(body.data.content, `<@&${SEEDERS_ROLE}> Time to hop in the Syndicate | Competitive Server to get it seeded`);
+  assert.equal(body.data.content, `<@&${SEEDERS_ROLE}> ${CALL_TEXT}`);
+  assert.ok(!body.data.content.includes(CALLER), 'the caller is not named');
   assert.deepEqual(body.data.allowed_mentions, { parse: [], users: [], roles: [SEEDERS_ROLE] });
   assert.equal(deps.flag.calls.call, 1);
   assert.deepEqual(deps.flag.deadlines, [deps.clock.now + CALL_DEADLINE_MS], 'the flag is told the deadline');
@@ -123,7 +124,7 @@ test('the call reaches the PCs at once from the same copy of the Worker', async 
 test('without a role to ping, the reply pings nobody', async () => {
   const deps = makeDeps(keys, { seeders: [] });
   const { body } = await run(deps, seedCommand());
-  assert.equal(body.data.content, `${CALL_TEXT} Called by <@${CALLER}>.`);
+  assert.equal(body.data.content, `${CALL_TEXT}`);
   assert.deepEqual(body.data.allowed_mentions, { parse: [], users: [], roles: [] });
 });
 
@@ -131,7 +132,7 @@ test('with two roles to ping, the reply pings both, and only them', async () => 
   const other = '555555555555555555';
   const deps = makeDeps(keys, { seeders: [SEEDERS_ROLE, other] });
   const { body } = await run(deps, seedCommand());
-  assert.equal(body.data.content, `<@&${SEEDERS_ROLE}> <@&${other}> ${CALL_TEXT} Called by <@${CALLER}>.`);
+  assert.equal(body.data.content, `<@&${SEEDERS_ROLE}> <@&${other}> ${CALL_TEXT}`);
   assert.deepEqual(body.data.allowed_mentions, { parse: [], users: [], roles: [SEEDERS_ROLE, other] });
 });
 
@@ -334,7 +335,7 @@ test('if the answer is lost after the call was stored, the public reply is still
   assert.equal(status, 200);
   assert.equal(fresh.asked, 1, 'a fresh connection to the flag is asked');
   assert.equal(body.data.flags, undefined);
-  assert.equal(body.data.content, `<@&${SEEDERS_ROLE}> ${CALL_TEXT} Called by <@${CALLER}>.`);
+  assert.equal(body.data.content, `<@&${SEEDERS_ROLE}> ${CALL_TEXT}`);
   assert.equal((await seedCall(deps)).body.call, deps.flag.state.callId);
 });
 
@@ -358,7 +359,7 @@ test("if the answer is lost and the flag can't be asked again, the channel is to
   deps.freshFlag = () => ({ latest: async () => { throw new Error('Network connection lost.'); } });
   const { body } = await run(deps, seedCommand());
   assert.equal(body.data.flags, undefined, 'the channel sees it');
-  assert.equal(body.data.content, `<@${CALLER}> tried to call a seed, but something went wrong, and I can't tell whether it went through. `
+  assert.equal(body.data.content, "Someone tried to call a seed, but something went wrong, and I can't tell whether it went through. "
     + 'If it did, PCs with **Seed when pinged** ticked will start joining, and the call ends within 15 minutes.');
   assert.deepEqual(body.data.allowed_mentions, { parse: [], users: [], roles: [] }, 'it pings nobody');
 });
@@ -392,7 +393,7 @@ test("if the flag doesn't answer the call in time, the channel is told before Di
   const start = Date.now();
   const { body } = await run(deps, seedCommand());
   const waited = Date.now() - start;
-  assert.match(body.data.content, new RegExp(`^<@${CALLER}> tried to call a seed, but something went wrong, and I can't tell whether it went through`));
+  assert.match(body.data.content, /^Someone tried to call a seed, but something went wrong, and I can't tell whether it went through/);
   assert.equal(body.data.flags, undefined, 'the channel sees it');
   assert.deepEqual(body.data.allowed_mentions, { parse: [], users: [], roles: [] });
   assert.ok(waited >= REPLY_DEADLINE_MS - CALL_DEADLINE_MS - 50 && waited < 1000, `it waited only for the time that was left (${waited} ms)`);
