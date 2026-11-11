@@ -1,6 +1,6 @@
 ; "SynSeeder.exe --selftest LOG" checks, on a real Windows PC without the
 ; game, the parts the other tests can't: Windows' own screen shrinking, the
-; daily task, the button image and font downloads, and that the exe starts.
+; scheduled tasks, the button image and font downloads, and that the exe starts.
 ; CI runs it on every build. Lines are PASS or FAIL checks, or notes.
 
 class SelfTest {
@@ -22,11 +22,14 @@ class SelfTest {
             ["settings", () => SelfTest.Settings(check)],
             ["task XML", () => SelfTest.TaskXml(check)],
             ["daily task", () => SelfTest.Task(check)],
+            ["seed-calls task XML", () => SelfTest.CallsXml(check)],
+            ["seed-calls task", () => SelfTest.CallsTask(check)],
             ["shrinking", () => SelfTest.Shrinking(check, note)],
             ["button images", () => SelfTest.ButtonImages(check, note)],
             ["fonts", () => SelfTest.Fonts(check)],
             ["screen", () => SelfTest.Screen(note)],
             ["server", () => SelfTest.Server(note)],
+            ["seed calls", () => SelfTest.Calls(note)],
             ["release", () => SelfTest.Release(note)]]
         for step in steps {
             try {
@@ -69,6 +72,24 @@ class SelfTest {
         found := DailyTask.Exists(name)
         DailyTask.Delete(name)
         check("daily task registers and deletes", found && !DailyTask.Exists(name))
+    }
+
+    static CallsXml(check) {
+        xml := DailyTask.CallsXml("C:\A & B\SynSeeder.exe", "--check-seed-calls", "20261123140000")
+        check("seed-calls task XML", InStr(xml, "<Command>C:\A &amp; B\SynSeeder.exe</Command>")
+            && InStr(xml, "<StartBoundary>2026-11-23T14:00:00</StartBoundary>")
+            && InStr(xml, "<Interval>PT1M</Interval>") && !InStr(xml, "<Duration>")
+            && InStr(xml, "<Arguments>--check-seed-calls</Arguments>"))
+    }
+
+    ; Like Task, for the seed-calls task. It would start tomorrow, so it never runs.
+    static CallsTask(check) {
+        name := DailyTask.CALLS_NAME " selftest"
+        xml := DailyTask.CallsXml(A_WinDir "\System32\rundll32.exe", "--check-seed-calls", DateAdd(A_Now, 1, "Days"))
+        DailyTask.Register(name, xml)
+        found := DailyTask.Exists(name)
+        DailyTask.Delete(name)
+        check("seed-calls task registers and deletes", found && !DailyTask.Exists(name))
     }
 
     ; The button finder expects each working pixel to be the rounded average of
@@ -184,6 +205,19 @@ class SelfTest {
         } catch as err {
             note("server", "unreachable (" err.Message ")")
         }
+    }
+
+    ; The real seed-call service, asked as a check asks it (a note: a CI
+    ; machine may not reach it), and what Windows says about full screen.
+    static Calls(note) {
+        try {
+            reply := SeedCalls.Fetch()
+            note("seed calls", reply.call = "" ? "the service answers: no call now" : "the service answers: a call " reply.age " s old")
+        } catch as err {
+            note("seed calls", "unreachable (" err.Message ")")
+        }
+        result := DllCall("shell32\SHQueryUserNotificationState", "Int*", &state := 0, "Int")
+        note("full screen", (SeedCalls.FullScreenNow() ? "yes" : "no") " (state " state ", result " result ")")
     }
 
     static Release(note) {

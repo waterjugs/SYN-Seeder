@@ -10,7 +10,8 @@ and it needs no new roles.
    channel. It can also ping a role, if you choose one in step 6.
 3. Every PC with **Seed when pinged** ticked in SynSeeder (version 1.1.0 and
    later) checks the bot about once a minute. It sees the call and starts its
-   normal seeding run, as long as nobody is using that PC.
+   normal seeding run if nobody is using that PC. If someone is, it asks
+   them first.
 
 The bot never talks to anyone's PC. The PCs come and ask it.
 

@@ -1,11 +1,12 @@
 ; What SynSeeder.exe does when started with a command (see SynSeeder.ahk).
 
 ; The command line as {seed, record, minutes, every, maxMinutes, installTo,
-; oldPids, selftest, selftestLog, unknown, passOn}. ``passOn`` is the command
-; line minus --install-to and --old-pid, for a new version to carry on with.
+; oldPids, selftest, selftestLog, checkSeedCalls, unknown, passOn}. ``passOn``
+; is the command line minus --install-to and --old-pid, for a new version to
+; carry on with.
 ParseArgs(args) {
     opts := {seed: false, record: false, minutes: 10, every: 3, maxMinutes: 0, installTo: "", oldPids: [],
-        selftest: false, selftestLog: "selftest.log", unknown: [], passOn: ""}
+        selftest: false, selftestLog: "selftest.log", checkSeedCalls: false, unknown: [], passOn: ""}
     i := 1
     nextValue(name) {
         if i >= args.Length
@@ -40,6 +41,8 @@ ParseArgs(args) {
                 opts.installTo := take(arg)
             case "--old-pid":
                 opts.oldPids.Push(Integer(numeric(arg, take(arg))))
+            case "--check-seed-calls":
+                opts.checkSeedCalls := true
             case "--selftest":
                 opts.selftest := true
                 if value != ""

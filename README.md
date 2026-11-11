@@ -5,7 +5,8 @@ while it's quiet, so real players want to join. This is called **seeding**.
 
 ## What happens
 
-1. Each day at your chosen time, the app checks the server.
+1. Each day at your chosen time, the app checks the server. It can also do
+   this when someone calls a seed on Discord (see **Seed when pinged**).
 2. Under 80 players? The game opens and joins Syndicate.
 3. Then it makes its own squad on the team with fewer players.
 4. Once the server hits 80, the game closes after a short random wait (up
@@ -25,6 +26,15 @@ while it's quiet, so real players want to join. This is called **seeding**.
 4. Tick **Seed automatically**, then press **Save**.
 
 Done! To try it now, press **Seed now**.
+
+## Seed when pinged
+
+Syngineers can call a seed with **/seed** in the SYNDICATE Discord. Want your
+PC to join in? Tick **Seed when pinged**, pick your hours, and press **Save**.
+
+- Nobody at the PC for 5 minutes? The run starts by itself.
+- In use, or something full screen? It asks you first.
+- It starts at most 3 runs a day, never two within 30 minutes.
 
 ## Good to know
 
@@ -53,6 +63,7 @@ SynSeeder is an [AutoHotkey](https://www.autohotkey.com/) v2.0.18 script.
 ```
 AutoHotkey64.exe SynSeeder.ahk             # the window (--seed seeds now)
 AutoHotkey64.exe SynSeeder.ahk --record    # screenshots, for making button images
+AutoHotkey64.exe SynSeeder.ahk --check-seed-calls   # one Seed when pinged check
 AutoHotkey64.exe /ErrorStdOut tests\run_tests.ahk
 python tests/make_fixtures.py build/fixtures   # needs opencv-python-headless
 AutoHotkey64.exe /ErrorStdOut tests\vision_cases.ahk build\fixtures

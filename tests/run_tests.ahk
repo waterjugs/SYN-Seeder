@@ -25,6 +25,7 @@
 #Include ..\src\Runner.ahk
 #Include ..\src\SeedLock.ahk
 #Include ..\src\DailyTask.ahk
+#Include ..\src\SeedCalls.ahk
 #Include ..\src\Updater.ahk
 #Include ..\src\FontFiles.ahk
 #Include ..\src\Look.ahk
@@ -38,6 +39,7 @@
 #Include MiscTests.ahk
 #Include UpdateTests.ahk
 #Include WindowTests.ahk
+#Include SeedCallTests.ahk
 
 Say(text) => FileAppend(text "`n", "*", "UTF-8")
 
@@ -66,7 +68,7 @@ RunAll()
 
 RunAll() {
     global testNow, testsDone, failedSoFar
-    suites := [RunnerTests, GameTests, MiscTests, UpdateTests, WindowTests]
+    suites := [RunnerTests, GameTests, MiscTests, UpdateTests, WindowTests, SeedCallTests]
     filter := A_Args.Length ? A_Args[1] : ""
     root := A_Temp "\synseeder-tests"
     passed := 0, failed := failedSoFar
