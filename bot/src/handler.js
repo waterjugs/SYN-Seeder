@@ -128,7 +128,7 @@ async function seedCommand(interaction, deps, arrivedAt) {
     return privateReply(`The bot isn't set up yet. Its owner needs to check these settings on Cloudflare: ${missing.join(', ')}.`);
   }
 
-  const { serverId, channelId, seedCallerRoleId, seedersRoleId } = deps.config;
+  const { serverId, channelId, seedCallerRoleId, seedersRoleIds } = deps.config;
   if (interaction.guild_id !== serverId) return privateReply('/seed only works in the SYNDICATE Discord server.');
   if (interaction.channel_id !== channelId) return privateReply(`Use /seed in <#${channelId}>.`);
   const roles = interaction.member?.roles;
@@ -180,7 +180,7 @@ async function seedCommand(interaction, deps, arrivedAt) {
   if (made === NO_ANSWER) return publicUnsure(callerId);
   if (!made.ok) return privateReply(made.reason === 'late' ? TOO_SLOW : limitMessage(made));
   deps.cache.remember({ id: made.id, calledAt: made.calledAt }, deps.now());
-  return publicCall(callerId, players, seedersRoleId, made.calledAt + LIMITS.callLifeMs);
+  return publicCall(callerId, seedersRoleIds);
 }
 
 // After the flag's answer to call ``id`` got lost: asks the flag, over a new
@@ -228,18 +228,18 @@ function limitMessage(verdict) {
   return `${LIMITS.callsPerDay} seeds have been called today (US Eastern time). The next one can be called ${when}.`;
 }
 
-// The reply everyone in the channel sees. It names the caller without
-// notifying them, and pings only the role in SEEDERS_ROLE_ID, if there is one.
-function publicCall(callerId, players, seedersRoleId, endsAt) {
-  const ping = seedersRoleId ? `<@&${seedersRoleId}> ` : '';
-  const content = `${ping}Seed called by <@${callerId}>. The server has ${players} players. `
-    + `PCs with **Seed when pinged** ticked will start joining over the next few minutes. `
-    + `This call ends <t:${Math.ceil(endsAt / 1000)}:R>.`;
+// The message for a seed call, after the pings.
+export const CALL_TEXT = 'Time to hop in the Syndicate | Competitive Server to get it seeded.';
+
+// The reply everyone in the channel sees. It pings only the roles in
+// SEEDERS_ROLE_ID, if any, and names the caller without notifying them.
+function publicCall(callerId, seedersRoleIds) {
+  const pings = seedersRoleIds.map(roleId => `<@&${roleId}> `).join('');
   return {
     type: CHANNEL_MESSAGE,
     data: {
-      content,
-      allowed_mentions: { parse: [], users: [], roles: seedersRoleId ? [seedersRoleId] : [] },
+      content: `${pings}${CALL_TEXT} Called by <@${callerId}>.`,
+      allowed_mentions: { parse: [], users: [], roles: [...seedersRoleIds] },
     },
   };
 }

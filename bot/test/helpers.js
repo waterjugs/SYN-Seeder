@@ -65,11 +65,11 @@ export const MINUTE = 60 * 1000;
 export const HOUR = 60 * MINUTE;
 
 // Everything handleRequest needs, with settings that pass.
-export function makeDeps(keys, { now = Date.UTC(2026, 10, 20, 18, 0, 0), players = 12, seeders = SEEDERS_ROLE } = {}) {
+export function makeDeps(keys, { now = Date.UTC(2026, 10, 20, 18, 0, 0), players = 12, seeders = [SEEDERS_ROLE] } = {}) {
   const clock = { now };
   const deps = {
     clock,
-    config: { publicKey: keys.publicKey, serverId: SERVER, channelId: CHANNEL, seedCallerRoleId: CALLER_ROLE, seedersRoleId: seeders },
+    config: { publicKey: keys.publicKey, serverId: SERVER, channelId: CHANNEL, seedCallerRoleId: CALLER_ROLE, seedersRoleIds: seeders },
     problems: [],
     flag: new FakeFlag(clock),
     freshFlag: () => deps.flag,

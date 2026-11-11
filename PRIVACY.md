@@ -1,6 +1,6 @@
 # SynSeeder Privacy Policy
 
-Last updated: 9 November 2026
+Last updated: 11 November 2026
 
 **New in version 1.1.0:** an optional **Seed when pinged** setting and a SynSeeder bot for Discord. That version won't come out before 23 November 2026. The parts of this policy about the bot apply as soon as it's added to the SYNDICATE Discord server, and the parts about Seed when pinged apply only from version 1.1.0 on.
 
@@ -71,7 +71,7 @@ The SynSeeder bot lets people with the Syngineers role call a seed with the **/s
 
 When someone uses /seed, Discord sends the bot what it sends with any command. That includes their Discord user ID, their names (user name, display name and server nickname), profile picture, roles and permissions, when they joined the server, and the language their Discord is set to. It also includes the server and channel it was used in. The bot uses the roles, server and channel to check that the person may call a seed there, and the ID to name them in its reply. It ignores the rest. Cloudflare handles all of it for us, with request logs switched off.
 
-The bot then reads the game server's public player count. It calls a seed only if the server has fewer than 50 players, no seed was called in the last 30 minutes, and fewer than 4 were called today. A call lasts 15 minutes. If the bot turns a call down, only the caller sees why. If it calls a seed, it replies in the channel. The reply names the person who called and can ping one role in the server, for players who want to hear about seed calls. That reply is the only record of who called, and the bot doesn't save a copy. Server moderators can delete it like any other message.
+The bot then reads the game server's public player count. It calls a seed only if the server has fewer than 50 players, no seed was called in the last 30 minutes, and fewer than 4 were called today. A call lasts 15 minutes. If the bot turns a call down, only the caller sees why. If it calls a seed, it replies in the channel. The reply names the person who called and can ping up to two roles in the server, for players who want to hear about seed calls. That reply is the only record of who called, and the bot doesn't save a copy. Server moderators can delete it like any other message.
 
 The bot keeps only what its limits need: a random number for the latest seed call, when it was made, and how many calls were made today. It keeps nothing else about the people who use /seed. It doesn't know which Discord users have Seed when pinged ticked.
 

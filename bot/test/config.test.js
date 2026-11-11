@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readConfig, SERVER_ID, SETTING_NAMES } from '../src/config.js';
+import { MAX_PING_ROLES, readConfig, SERVER_ID, SETTING_NAMES } from '../src/config.js';
 
 const KEY = 'a'.repeat(64);
 const good = {
@@ -17,7 +17,7 @@ test('good settings are read', () => {
       serverId: SERVER_ID,
       channelId: '222222222222222222',
       seedCallerRoleId: '333333333333333333',
-      seedersRoleId: '444444444444444444',
+      seedersRoleIds: ['444444444444444444'],
     },
     problems: [],
   });
@@ -44,7 +44,26 @@ test('every missing setting is named, except the optional role to ping', () => {
 test('an empty SEEDERS_ROLE_ID means no ping', () => {
   const { config, problems } = readConfig({ ...good, SEEDERS_ROLE_ID: '' });
   assert.deepEqual(problems, []);
-  assert.equal(config.seedersRoleId, null);
+  assert.deepEqual(config.seedersRoleIds, []);
+});
+
+test('SEEDERS_ROLE_ID can name two roles, separated by a comma', () => {
+  for (const text of ['444444444444444444,555555555555555555', ' 444444444444444444 , 555555555555555555 ', '444444444444444444 555555555555555555']) {
+    const { config, problems } = readConfig({ ...good, SEEDERS_ROLE_ID: text });
+    assert.deepEqual(problems, [], text);
+    assert.deepEqual(config.seedersRoleIds, ['444444444444444444', '555555555555555555'], text);
+  }
+  // The same role twice is pinged once.
+  assert.deepEqual(readConfig({ ...good, SEEDERS_ROLE_ID: '444444444444444444,444444444444444444' }).config.seedersRoleIds, ['444444444444444444']);
+});
+
+test('more roles than the Privacy Policy allows, or one that is not an ID, is reported and pings nobody', () => {
+  assert.equal(MAX_PING_ROLES, 2);
+  for (const text of ['444444444444444444,555555555555555555,666666666666666666', '444444444444444444,Seeders', '444444444444444444,<@&555555555555555555>']) {
+    const { config, problems } = readConfig({ ...good, SEEDERS_ROLE_ID: text });
+    assert.deepEqual(problems, ['SEEDERS_ROLE_ID'], text);
+    assert.deepEqual(config.seedersRoleIds, [], text);
+  }
 });
 
 test('values that are not IDs or keys are reported', () => {

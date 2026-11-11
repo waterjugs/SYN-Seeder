@@ -7,7 +7,9 @@ and it needs no new roles.
 
 1. A Syngineer types **/seed** in the SynSeeder channel.
 2. The bot checks the call (see below). If it's fine, it replies in the
-   channel. It can also ping a role, if you choose one in step 6.
+   channel: "Time to hop in the Syndicate | Competitive Server to get it
+   seeded. Called by @name." It can also ping one or two roles, if you
+   choose them in step 6.
 3. Every PC with **Seed when pinged** ticked in SynSeeder (version 1.1.0 and
    later) checks the bot about once a minute. It sees the call and starts its
    normal seeding run if nobody is using that PC. If someone is, it asks
@@ -173,13 +175,16 @@ again.
 
 You don't need the server's ID: the bot already knows SYNDICATE's.
 
-**Optional: a role to ping.** By default the bot's reply pings nobody. If
+**Optional: roles to ping.** By default the bot's reply pings nobody. If
 SYNDICATE already has a role that players join to hear about seeds, you can
 add a third setting, `SEEDERS_ROLE_ID`, with that role's ID. Copy it the
 same way: click someone who has the role, then right-click the role in their
-profile > **Copy Role ID**. Then each call pings that role. Leave the setting
-out for no ping. If the setting's name is misspelled, /seed still calls seeds
-but pings nobody. If its value isn't a number, /seed says so.
+profile > **Copy Role ID**. Then each call pings that role. To ping two
+roles, put both IDs in the setting with a comma between them, like
+`111111111111111111,222222222222222222`. The bot pings at most two, because
+the Privacy Policy says so. Leave the setting out for no ping. If the
+setting's name is misspelled, /seed still calls seeds but pings nobody. If
+its value isn't one or two numbers, /seed says so.
 
 ### 7. Invite the bot to the SYNDICATE server
 
@@ -195,7 +200,7 @@ them with you:
   Discord says SynSeeder was added, turn **Public Bot** off again and press
   **Save Changes**. (Don't wait to see the bot in the member list. It always
   shows as offline, and SYNDICATE is too big to list offline members.)
-- The admin can do step 9 for you, and 7.3 if you chose a role to ping.
+- The admin can do step 9 for you, and 7.3 if you chose roles to ping.
 
 Do steps 7 to 9 in one go. Until step 9 is done, everyone in the server sees
 /seed, though the bot turns down anyone without the Syngineers role.
@@ -208,7 +213,7 @@ Do steps 7 to 9 in one go. Until step 9 is done, everyone in the server sees
 2. Open it in your browser, pick **SYNDICATE**, and press **Authorize**.
    The bot joins with no server-wide permissions. It doesn't need any to
    answer /seed.
-3. Only if you chose a role to ping in step 6: let the bot ping it in the
+3. Only if you chose roles to ping in step 6: let the bot ping them in the
    SynSeeder channel. Right-click the channel > **Edit Channel >
    Permissions > Advanced permissions**, press **+** next to
    **Roles/Members**, and pick the bot, **SynSeeder** (it's listed under
@@ -217,7 +222,7 @@ Do steps 7 to 9 in one go. Until step 9 is done, everyone in the server sees
    - **View Channel**
    - **Send Messages**
    - **Mention @everyone, @here, and All Roles**. That sounds big, but it
-     only works in this one channel, and the bot only ever pings the role
+     only works in this one channel, and the bot only ever pings the roles
      you chose.
 
    Without a role to ping, skip this. The bot can answer /seed without any
@@ -282,7 +287,7 @@ someone who isn't an admin.
    In the SynSeeder channel, type `/seed` and press Enter.
    - If the server has fewer than 50 players, the bot replies to everyone.
      Open the `/seed-call` address from step 3: it now shows the call and
-     its age. If you chose a role to ping, ask someone with it whether
+     its age. If you chose roles to ping, ask someone with each one whether
      Discord notified them. If not, check step 7.3 and `SEEDERS_ROLE_ID`
      (step 6).
    - If it has 50 or more, only you see a message saying it doesn't need a seed.

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CALL_DEADLINE_MS, REPLY_DEADLINE_MS, handleRequest, SeedCallCache } from '../src/handler.js';
+import { CALL_DEADLINE_MS, CALL_TEXT, REPLY_DEADLINE_MS, handleRequest, SeedCallCache } from '../src/handler.js';
 import {
   CALLER, CALLER_ROLE, CHANNEL, HOUR, MINUTE, OTHER_CHANNEL, SEEDERS_ROLE, SERVER,
   discordRequest, getRequest, makeDeps, makeKeys, newCallId, seedCommand,
@@ -101,8 +101,8 @@ test('a Syngineer calls a seed, and the reply pings the chosen role but not the 
   assert.equal(status, 200);
   assert.equal(body.type, 4);
   assert.equal(body.data.flags, undefined, 'the call is public');
-  assert.match(body.data.content, new RegExp(`^<@&${SEEDERS_ROLE}> Seed called by <@${CALLER}>\\. The server has 12 players\\.`));
-  assert.match(body.data.content, new RegExp(`ends <t:${deps.clock.now / 1000 + 900}:R>`));
+  assert.equal(body.data.content, `<@&${SEEDERS_ROLE}> Time to hop in the Syndicate | Competitive Server to get it seeded. Called by <@${CALLER}>.`);
+  assert.equal(body.data.content, `<@&${SEEDERS_ROLE}> ${CALL_TEXT} Called by <@${CALLER}>.`);
   assert.deepEqual(body.data.allowed_mentions, { parse: [], users: [], roles: [SEEDERS_ROLE] });
   assert.equal(deps.flag.calls.call, 1);
   assert.deepEqual(deps.flag.deadlines, [deps.clock.now + CALL_DEADLINE_MS], 'the flag is told the deadline');
@@ -121,10 +121,18 @@ test('the call reaches the PCs at once from the same copy of the Worker', async 
 });
 
 test('without a role to ping, the reply pings nobody', async () => {
-  const deps = makeDeps(keys, { seeders: null });
+  const deps = makeDeps(keys, { seeders: [] });
   const { body } = await run(deps, seedCommand());
-  assert.match(body.data.content, new RegExp(`^Seed called by <@${CALLER}>`));
+  assert.equal(body.data.content, `${CALL_TEXT} Called by <@${CALLER}>.`);
   assert.deepEqual(body.data.allowed_mentions, { parse: [], users: [], roles: [] });
+});
+
+test('with two roles to ping, the reply pings both, and only them', async () => {
+  const other = '555555555555555555';
+  const deps = makeDeps(keys, { seeders: [SEEDERS_ROLE, other] });
+  const { body } = await run(deps, seedCommand());
+  assert.equal(body.data.content, `<@&${SEEDERS_ROLE}> <@&${other}> ${CALL_TEXT} Called by <@${CALLER}>.`);
+  assert.deepEqual(body.data.allowed_mentions, { parse: [], users: [], roles: [SEEDERS_ROLE, other] });
 });
 
 test('someone without the Syngineers role is refused, admins included', async () => {
@@ -326,8 +334,7 @@ test('if the answer is lost after the call was stored, the public reply is still
   assert.equal(status, 200);
   assert.equal(fresh.asked, 1, 'a fresh connection to the flag is asked');
   assert.equal(body.data.flags, undefined);
-  assert.match(body.data.content, new RegExp(`^<@&${SEEDERS_ROLE}> Seed called by <@${CALLER}>\\.`));
-  assert.match(body.data.content, new RegExp(`ends <t:${deps.clock.now / 1000 + 900}:R>`));
+  assert.equal(body.data.content, `<@&${SEEDERS_ROLE}> ${CALL_TEXT} Called by <@${CALLER}>.`);
   assert.equal((await seedCall(deps)).body.call, deps.flag.state.callId);
 });
 
