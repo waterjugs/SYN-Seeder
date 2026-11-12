@@ -217,7 +217,7 @@ class HllGame {
         idle := WinApi.UserIdleSeconds()
         minimised := front = hwnd && this.switching = "" && WinApi.IsMinimised(hwnd)  ; by someone, not SynSeeder
         if front = hwnd && !minimised {
-            if this.switching = "" && this.WaitingForUser() {
+            if this.switching = "" && this.focusWait != "" {  ; any wait, a refused takeover too (as before an unlock)
                 if !this.cameBack
                     Logs.Info("The game is in front again, but not because of SynSeeder: you switched to it, "
                         . "or Windows or the game did (mouse and keyboard last used " Round(idle) "s ago)")
@@ -256,10 +256,15 @@ class HllGame {
                 Logs.Warning("Couldn't bring the game to the front (" HllGame.ForegroundApp() " has it); "
                     . "holding input until it is")
             } else {
-                name := free ? "" : HllGame._FrontName(front)
-                Logs.Warning((free ? "The PC is in use" : "Another program's window is in front"
-                    . (name != "" ? " (" name ")" : "") " and the PC is in use")
-                    . "; waiting until the mouse and keyboard have been idle for " HllGame.Span(need))
+                if free
+                    why := "The PC is in use"
+                else if !front
+                    why := "The PC is locked, or a Windows prompt is up"
+                else {
+                    name := HllGame._FrontName(front)
+                    why := "Another program's window is in front" (name != "" ? " (" name ")" : "") " and the PC is in use"
+                }
+                Logs.Warning(why "; waiting until the mouse and keyboard have been idle for " HllGame.Span(need))
                 WinApi.Flash(hwnd)
             }
             this.focusWait := wait

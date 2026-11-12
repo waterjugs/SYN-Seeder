@@ -357,7 +357,8 @@ class SeedCalls {
         g.SetFont("s10", "Segoe UI")
         g.MarginX := 18, g.MarginY := 16
         g.Add("Text", "w360", "A seed was called on Discord. Start seeding now?")
-        g.Add("Text", "w360 y+8", "The game will open and join the server. Leave the mouse and keyboard alone while it does.")
+        g.Add("Text", "w360 y+8", "The game will open and join the server. Leave the mouse and keyboard alone while it does. "
+            . "If it opens behind another window, it waits until you've left them alone for 5 minutes, or you can click it on the taskbar.")
         ; "Not now" first, so it's the one Tab and Enter start on
         g.Add("Button", "x258 y+18 w120 Default", "Not now").OnEvent("Click", sayNo)
         g.Add("Button", "x126 yp w120", "Seed now").OnEvent("Click", sayYes)

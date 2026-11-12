@@ -214,6 +214,24 @@ class GameTests {
         AssertEq(LogsWith("not because of SynSeeder"), 2)
     }
 
+    static Test_waits_for_the_pc_to_settle_when_the_game_comes_back_after_a_refusal() {
+        ; As around an unlock: nothing can come to the front of a locked PC, then Windows gives the game the front back.
+        api := FakeWinApi()
+        game := GameWithWindow()
+        Logs.capture := []
+        api.front := 0, api.unlocked := false, api.forced := false, api.idle := 60
+        Assert(!game.Focus())
+        AssertEq(LogsWith("The PC is locked, or a Windows prompt is up; waiting until the mouse and keyboard have been idle for 5 min"), 1)
+        api.idle := HllGame.IDLE_BEFORE_TAKEOVER + 60
+        Assert(!game.Focus())
+        AssertEq(LogsWith("Couldn't bring the game to the front"), 1)
+        api.front := 1234, api.unlocked := true, api.polite := true, api.idle := 1
+        Assert(!game.Focus(), "carried on under the hands of someone who just unlocked the PC")
+        AssertEq(LogsWith("not because of SynSeeder"), 1)
+        api.idle := HllGame.SETTLE_SECONDS
+        Assert(game.Focus())
+    }
+
     static Test_synseeders_own_takeover_is_logged_as_its_own() {
         api := FakeWinApi()
         game := GameWithWindow()
