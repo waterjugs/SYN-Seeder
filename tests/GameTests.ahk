@@ -5,8 +5,9 @@
 ; ``front`` is the window in front: by default 5678, another program's.
 ; The game's window is 1234 (see GameWithWindow) and 4321 is another of its
 ; windows; 7777 and 7778 are SynSeeder's (this program runs as SynSeeder.exe).
+; ``restoring`` is the game in front but still restoring from minimised.
 FakeWinApi() {
-    api := {polite: false, forced: true, idle: 0.0, calls: [], target: "", frontPid: 0, restoring: false,
+    api := {polite: false, forced: true, idle: 0.0, calls: [], target: "", frontPid: 0, restoring: false, unlocked: true,
         front: 5678, pids: Map(1234, 100, 4321, 100, 5678, 200, 7777, 300, 7778, 301, 7779, 302),
         names: Map(100, "HLLVietnam-Win64-Shipping.exe", 200, "chrome.exe", 300, "SynSeeder.exe",
             301, "SynSeeder (1).exe", 302, "SynSeederish.exe", 400, "SynSeeder.exe")}
@@ -14,6 +15,7 @@ FakeWinApi() {
     Patches.Set(WinApi, "WindowPid", (this, hwnd) => api.pids.Has(hwnd) ? api.pids[hwnd] : 0)
     Patches.Set(WinApi, "ProcessName", (this, pid) => api.names.Has(pid) ? api.names[pid] : "")
     Patches.Set(WinApi, "OwnPid", (*) => 400)
+    Patches.Set(WinApi, "DesktopUnlocked", (*) => api.unlocked)
     Patches.Set(WinApi, "ForegroundPid", (*) => api.frontPid)
     Patches.Set(WinApi, "InFront", (this, hwnd) => api.restoring)
     Patches.Set(WinApi, "SetInputTarget", (this, hwnd) => api.target := hwnd)
@@ -69,14 +71,31 @@ Installed(entries) {
 
 class GameTests {
     static Test_in_front_when_windows_allows_it() {
-        ; Nothing in front, the game, another of its windows, SynSeeder's window (after Seed now).
-        for front in [0, 1234, 4321, 7777, 7778] {
+        api := FakeWinApi()
+        game := GameWithWindow()
+        api.front := 1234, api.polite := true
+        Assert(game.Focus())
+        AssertEq(api.calls, ["ask"])
+        AssertEq(api.target, 1234)
+    }
+
+    static Test_takes_the_front_from_no_other_program_once_the_pc_settles() {
+        ; Nothing in front, another of the game's windows, SynSeeder's window (after Seed now).
+        for front in [0, 4321, 7777, 7778] {
             api := FakeWinApi()
             game := GameWithWindow()
+            Logs.capture := []
             api.front := front, api.polite := true
+            api.idle := HllGame.SETTLE_SECONDS - 1  ; someone is still at it
+            Assert(!game.Focus(), "took the front at once from " front)
+            AssertEq(api.calls, ["flash"])
+            AssertEq(LogsWith("The PC is in use; waiting until the mouse and keyboard have been idle for 10 s"), 1)
+            Assert(game.WaitingForUser())
+            api.idle := HllGame.SETTLE_SECONDS
             Assert(game.Focus(), "not in front from " front)
-            AssertEq(api.calls, ["ask"])
-            AssertEq(api.target, 1234)
+            AssertEq(api.calls, ["flash", "force+alt"])
+            AssertEq(LogsWith("Brought the game to the front (" (front = 0 ? "no window" : front = 4321
+                ? "another of its windows" : "SynSeeder's window") " was in front; mouse and keyboard idle for 10 s)"), 1)
             Patches.Undo()
         }
     }
@@ -98,11 +117,11 @@ class GameTests {
     }
 
     static Test_another_programs_window_is_never_asked_for() {
-        ; Another program, one only named like SynSeeder, and a window that's gone.
-        for front in [5678, 7779, 9999] {
+        ; Another program, one only named like SynSeeder, a window that's gone, and nothing in front of a locked PC.
+        for front in [5678, 7779, 9999, 0] {
             api := FakeWinApi()
             game := GameWithWindow()
-            api.front := front, api.polite := true, api.idle := 10
+            api.front := front, api.polite := true, api.idle := 60, api.unlocked := false
             Assert(!game.Focus(), "took the front from " front)
             AssertEq(api.calls, ["flash"])
             Patches.Undo()
@@ -114,43 +133,72 @@ class GameTests {
         api := FakeWinApi()
         game := GameWithWindow()
         Logs.capture := []
-        api.idle := 299.5
+        api.idle := 299.4
         Assert(!game.Focus())
         AssertEq(api.calls, ["flash"])
-        AssertEq(LogsWith("idle for 5 min 0 s"), 1)
+        AssertEq(LogsWith("Another window is in front and the PC is in use; waiting until the mouse and keyboard have been idle for 5 min"), 1)
         api.idle := 300
         Assert(game.Focus())
         AssertEq(api.calls, ["flash", "force+alt"])
-        AssertEq(LogsWith("Brought the game to the front (mouse and keyboard idle for 5 min 0 s)"), 1)
+        AssertEq(LogsWith("Brought the game to the front (mouse and keyboard idle for 5 min)"), 1)
     }
 
-    static Test_says_when_the_game_came_back_without_synseeder() {
+    static Test_waits_for_the_pc_to_settle_when_the_game_comes_back_by_itself() {
         api := FakeWinApi()
         game := GameWithWindow()
         Logs.capture := []
         api.idle := 20
         Assert(!game.Focus())
-        api.front := 1234, api.polite := true, api.idle := 2  ; someone clicked the game (or it took the front)
-        Assert(game.Focus())
+        ; Someone clicked the game, or Windows switched to it when they minimised their window.
+        api.front := 1234, api.polite := true, api.idle := 2
+        Assert(!game.Focus(), "carried on under the hands of someone using the PC")
         AssertEq(LogsWith("not because of SynSeeder"), 1)
         Assert(InStr(Logs.capture[Logs.capture.Length], "last used 2s ago"), Logs.capture[Logs.capture.Length])
-        Assert(game.Focus())  ; still in front: said once
-        AssertEq(LogsWith("not because of SynSeeder"), 1)
-        ; A takeover by SynSeeder itself isn't reported as someone else's.
+        Assert(game.WaitingForUser())  ; so it doesn't count against the time to get in
+        api.idle := HllGame.SETTLE_SECONDS - 1
+        Assert(!game.Focus())
+        api.idle := HllGame.SETTLE_SECONDS
+        Assert(game.Focus())
+        AssertEq(LogsWith("not because of SynSeeder"), 1)  ; said once
+        AssertEq(LogsWith("Brought the game to the front"), 0)
+        Assert(!game.WaitingForUser())
+        ; Already left alone when it came back: carries on at once, and says so.
         api.front := 5678, api.idle := 1
         Assert(!game.Focus())
-        api.idle := HllGame.IDLE_BEFORE_TAKEOVER
+        api.front := 1234, api.idle := 40
+        Assert(game.Focus())
+        AssertEq(LogsWith("not because of SynSeeder"), 2)
+    }
+
+    static Test_synseeders_own_takeover_is_logged_as_its_own() {
+        api := FakeWinApi()
+        game := GameWithWindow()
+        Logs.capture := []
+        api.idle := 20
+        Assert(!game.Focus())  ; a wait
+        ; The takeover gets the game in front, but it's still restoring from minimised.
+        api.idle := HllGame.IDLE_BEFORE_TAKEOVER + 12, api.forced := false, api.restoring := true
+        Assert(!game.Focus())
+        api.front := 1234, api.restoring := false, api.polite := true
+        Assert(game.Focus())
+        AssertEq(LogsWith("Brought the game to the front (mouse and keyboard idle for 5 min 12 s)"), 1)
+        AssertEq(LogsWith("not because of SynSeeder"), 0)
+        ; And a plain takeover followed by the game in front says nothing more.
+        api.front := 5678, api.idle := 1
+        Assert(!game.Focus())
+        api.idle := HllGame.IDLE_BEFORE_TAKEOVER, api.forced := true
         Assert(game.Focus())
         api.front := 1234
         Assert(game.Focus())
-        AssertEq(LogsWith("not because of SynSeeder"), 1)
+        AssertEq(LogsWith("not because of SynSeeder"), 0)
+        AssertEq(LogsWith("Brought the game to the front"), 2)
     }
 
     static Test_a_game_restoring_from_minimised_is_not_someone_using_the_pc() {
         api := FakeWinApi()
         game := GameWithWindow()
         Logs.capture := []
-        api.front := 1234, api.restoring := true  ; in front, but BringToFront is still restoring it
+        api.front := 1234  ; in front, but BringToFront is still restoring it
         Assert(!game.Focus())
         AssertEq(LogsWith("WARNING"), 0)
         Assert(!game.WaitingForUser())
@@ -389,6 +437,37 @@ class GameTests {
     static Test_idle_survives_tick_wraparound() {
         AssertEq(WinApi.IdleMs(1000, 2 ** 32 - 4000, "", ""), 5000)
         AssertEq(WinApi.IdleMs(1000, 2 ** 32 - 4000, 2 ** 32 - 4100, 2 ** 32 - 9000), 10000)
+    }
+
+    static Test_input_stamped_a_little_ahead_is_input_now() {
+        ; Another program's SendInput can give its own time stamp.
+        AssertEq(WinApi.IdleMs(1000, 1500, "", ""), 0)
+        AssertEq(WinApi.IdleMs(2 ** 32 - 100, 50, "", ""), 0)  ; ahead, across the wrap
+    }
+
+    static Test_a_switch_during_a_key_press_counts_as_the_players_input() {
+        last := {tick: 20100}  ; the player's Alt+Tab, 100 ms after our key down: inside the slack
+        game := {inFront: true}
+        Patches.Set(WinApi, "_LastInput", (*) => last.tick)
+        Patches.Set(WinApi, "_OnTarget", (*) => game.inFront)
+        Patches.Value(WinApi, "playerInputTick", 5000)
+        Patches.Value(WinApi, "ownInputTick", 20000)
+        WinApi._Send([], "release")  ; the key-up with the game still in front: taken as ours
+        AssertEq(WinApi.playerInputTick, 5000)
+        game.inFront := false
+        Patches.Value(WinApi, "ownInputTick", 20000)
+        WinApi._Send([], true)  ; a nudge to bring the game back: not in front, as expected
+        AssertEq(WinApi.playerInputTick, 5000)
+        Patches.Value(WinApi, "ownInputTick", 20000)
+        WinApi._Send([], "release")  ; the key-up goes out with the game no longer in front: theirs
+        AssertEq(WinApi.playerInputTick, 20100)
+    }
+
+    static Test_log_spans() {
+        AssertEq(HllGame.Span(10), "10 s")
+        AssertEq(HllGame.Span(59.6), "1 min")
+        AssertEq(HllGame.Span(300), "5 min")
+        AssertEq(HllGame.Span(312.2), "5 min 12 s")
     }
 
     ; The Epic launcher's install list
