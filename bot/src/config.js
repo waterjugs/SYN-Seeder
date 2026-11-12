@@ -11,6 +11,9 @@ export const SNOWFLAKE = /^\d{17,20}$/;
 // Fixed here rather than in a setting, so it can't be pointed somewhere else.
 export const SERVER_ID = '1117120667490455713';
 
+// The most roles a call can ping (SEEDERS_ROLE_ID). The Privacy Policy says two.
+export const MAX_PING_ROLES = 2;
+
 // The settings' names, as they're typed on Cloudflare.
 export const SETTING_NAMES = Object.freeze([
   'DISCORD_PUBLIC_KEY',
@@ -37,16 +40,17 @@ export function readConfig(env) {
   const channelId = id('SYNSEEDER_CHANNEL_ID');
   const seedCallerRoleId = id('SEED_CALLER_ROLE_ID');
 
-  // The role to ping is optional: left empty, the bot's reply pings nobody.
-  let seedersRoleId = null;
+  // The roles to ping are optional: one role ID, or two separated by a comma.
+  // Left empty, the bot's reply pings nobody.
   const seeders = value('SEEDERS_ROLE_ID');
-  if (seeders !== '') {
-    if (SNOWFLAKE.test(seeders)) seedersRoleId = seeders;
-    else problems.push('SEEDERS_ROLE_ID');
+  let seedersRoleIds = seeders === '' ? [] : [...new Set(seeders.split(/[\s,]+/).filter(Boolean))];
+  if (seeders !== '' && (seedersRoleIds.length === 0 || seedersRoleIds.length > MAX_PING_ROLES || !seedersRoleIds.every(roleId => SNOWFLAKE.test(roleId)))) {
+    problems.push('SEEDERS_ROLE_ID');
+    seedersRoleIds = [];
   }
 
   return {
-    config: { publicKey, serverId, channelId, seedCallerRoleId, seedersRoleId },
+    config: { publicKey, serverId, channelId, seedCallerRoleId, seedersRoleIds },
     problems,
   };
 }

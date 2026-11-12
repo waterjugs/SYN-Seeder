@@ -26,7 +26,7 @@ const MAX_BODY_CHARS = 64 * 1024;
 
 // Discord throws away a reply that comes more than 3 seconds after it sent
 // /seed. A seed is called only if the flag can store it this soon after the
-// request arrived, so the reply naming the caller still reaches the channel.
+// request arrived, so the reply announcing the call still reaches the channel.
 export const CALL_DEADLINE_MS = 2200;
 // And every answer to /seed must be ready this soon after the request arrived.
 export const REPLY_DEADLINE_MS = 2700;
@@ -128,16 +128,12 @@ async function seedCommand(interaction, deps, arrivedAt) {
     return privateReply(`The bot isn't set up yet. Its owner needs to check these settings on Cloudflare: ${missing.join(', ')}.`);
   }
 
-  const { serverId, channelId, seedCallerRoleId, seedersRoleId } = deps.config;
+  const { serverId, channelId, seedCallerRoleId, seedersRoleIds } = deps.config;
   if (interaction.guild_id !== serverId) return privateReply('/seed only works in the SYNDICATE Discord server.');
   if (interaction.channel_id !== channelId) return privateReply(`Use /seed in <#${channelId}>.`);
   const roles = interaction.member?.roles;
   if (!Array.isArray(roles) || !roles.includes(seedCallerRoleId)) {
     return privateReply(`Only members with the <@&${seedCallerRoleId}> role can call a seed.`);
-  }
-  const callerId = interaction.member?.user?.id;
-  if (typeof callerId !== 'string' || !/^\d{17,20}$/.test(callerId)) {
-    return privateReply("Discord didn't say who you are, so no seed was called.");
   }
 
   // Every step before the call must be done by the deadline. Date.now() moves
@@ -177,10 +173,10 @@ async function seedCommand(interaction, deps, arrivedAt) {
     if (made === null) return privateReply(NOT_CALLED);
   }
   // No answer in time: the call may be stored, and Discord won't wait.
-  if (made === NO_ANSWER) return publicUnsure(callerId);
+  if (made === NO_ANSWER) return publicUnsure();
   if (!made.ok) return privateReply(made.reason === 'late' ? TOO_SLOW : limitMessage(made));
   deps.cache.remember({ id: made.id, calledAt: made.calledAt }, deps.now());
-  return publicCall(callerId, players, seedersRoleId, made.calledAt + LIMITS.callLifeMs);
+  return publicCall(seedersRoleIds);
 }
 
 // After the flag's answer to call ``id`` got lost: asks the flag, over a new
@@ -228,31 +224,32 @@ function limitMessage(verdict) {
   return `${LIMITS.callsPerDay} seeds have been called today (US Eastern time). The next one can be called ${when}.`;
 }
 
-// The reply everyone in the channel sees. It names the caller without
-// notifying them, and pings only the role in SEEDERS_ROLE_ID, if there is one.
-function publicCall(callerId, players, seedersRoleId, endsAt) {
-  const ping = seedersRoleId ? `<@&${seedersRoleId}> ` : '';
-  const content = `${ping}Seed called by <@${callerId}>. The server has ${players} players. `
-    + `PCs with **Seed when pinged** ticked will start joining over the next few minutes. `
-    + `This call ends <t:${Math.ceil(endsAt / 1000)}:R>.`;
+// The message for a seed call, after the pings.
+export const CALL_TEXT = 'Time to hop in the Syndicate | Competitive Server to get it seeded';
+
+// The reply everyone in the channel sees. It pings only the roles in
+// SEEDERS_ROLE_ID, if any. It doesn't name the caller: Discord already shows
+// who used /seed above it.
+function publicCall(seedersRoleIds) {
+  const pings = seedersRoleIds.map(roleId => `<@&${roleId}> `).join('');
   return {
     type: CHANNEL_MESSAGE,
     data: {
-      content,
-      allowed_mentions: { parse: [], users: [], roles: seedersRoleId ? [seedersRoleId] : [] },
+      content: `${pings}${CALL_TEXT}`,
+      allowed_mentions: { parse: [], users: [], roles: [...seedersRoleIds] },
     },
   };
 }
 
 // Said in the channel when a seed may have been called but the bot can't
-// tell. Like the call itself, it names who tried, without notifying them.
-// It pings nobody, since there may be no call.
-function publicUnsure(callerId) {
+// tell. Like the call itself, it doesn't name who tried. It pings nobody,
+// since there may be no call.
+function publicUnsure() {
   const minutes = LIMITS.callLifeMs / 60000;
   return {
     type: CHANNEL_MESSAGE,
     data: {
-      content: `<@${callerId}> tried to call a seed, but something went wrong, and I can't tell whether it went through. `
+      content: "Someone tried to call a seed, but something went wrong, and I can't tell whether it went through. "
         + `If it did, PCs with **Seed when pinged** ticked will start joining, and the call ends within ${minutes} minutes.`,
       allowed_mentions: { parse: [], users: [], roles: [] },
     },

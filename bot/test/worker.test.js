@@ -83,7 +83,7 @@ test('the Worker answers the PING, calls a seed, and the PCs see the call', asyn
 
   const reply = await interact(seedCommand());
   assert.equal(reply.data.flags, undefined);
-  assert.match(reply.data.content, new RegExp(`^<@&${SEEDERS_ROLE}> Seed called by <@${CALLER}>\\. The server has 8 players\\.`));
+  assert.equal(reply.data.content, `<@&${SEEDERS_ROLE}> Time to hop in the Syndicate | Competitive Server to get it seeded`);
   assert.equal(statsCalls, 1);
 
   const seen = await (await worker.fetch(getRequest('/seed-call'), env)).json();
@@ -106,7 +106,7 @@ test('if the answer to a stored call is lost, a new connection finds it and the 
   env.SEED_FLAG.loseNextAnswer = true;
   const reply = await interact(seedCommand());
   assert.equal(reply.data.flags, undefined);
-  assert.match(reply.data.content, new RegExp(`^<@&${SEEDERS_ROLE}> Seed called by <@${CALLER}>\\.`));
+  assert.match(reply.data.content, new RegExp(`^<@&${SEEDERS_ROLE}> Time to hop in .* to get it seeded$`));
   const seen = await (await worker.fetch(getRequest('/seed-call'), env)).json();
   assert.match(seen.call, /^[0-9a-f]{32}$/);
 });
