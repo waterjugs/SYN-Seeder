@@ -127,6 +127,34 @@ class MiscTests {
         AssertEq(ServerStats.Fetch("http://127.0.0.1:9/nothing", 1), "")
     }
 
+    ; The stats page is someone else's. It gets one time limit in all, however
+    ; slowly it answers, and an answer far bigger than a real one is refused.
+    static Test_fetch_gives_the_stats_page_one_time_limit_and_a_size_limit() {
+        answer := FakeResponse(LIVE_STATS)
+        asked := []
+        start(this, url, accept, timeout, async) {
+            asked.Push([url, accept, timeout, async])
+            return answer
+        }
+        Patches.Set(Http, "Start", start)
+        AssertEq(ServerStats.Fetch("https://stats.example/api", 2).players, 11)
+        AssertEq(asked, [["https://stats.example/api", "application/json", 2, true]])
+        Logs.capture := []
+        answer := FakeResponse(LIVE_STATS, false)  ; never answers
+        t0 := A_TickCount
+        AssertEq(ServerStats.Fetch("https://stats.example/api", 0.3), "")
+        took := A_TickCount - t0
+        Assert(answer.aborted, "the request wasn't stopped")
+        Assert(took >= 300 && took < 3000, "took " took " ms")
+        Assert(InStr(Logs.capture[1], "no answer in 0.3 seconds"), Logs.capture[1])
+        pad := "x"
+        while StrLen(pad) <= ServerStats.MAX_BYTES
+            pad .= pad
+        answer := FakeResponse('{"result": {"player_count": 11, "pad": "' pad '"}}')
+        AssertEq(ServerStats.Fetch("https://stats.example/api", 2), "")
+        Assert(InStr(Logs.capture[2], "the answer is too big"), SubStr(Logs.capture[2], 1, 200))
+    }
+
     ; WinHTTP hands back a new array for every read of ResponseBody, freed as
     ; soon as nothing holds it; the text must be copied while it's held.
     static Test_response_text_survives_the_array_being_freed() {
