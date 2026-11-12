@@ -25,6 +25,7 @@ class SetupWindow {
         this.seeding := ""        ; whether a run was going at the last look ("" until looked)
         this.spawned := 0         ; the run Seed now started
         this.busy := false        ; Stop seeding is waiting for runs to end
+        this.saveProblem := ""    ; what the last Save couldn't do; "" if it all worked
         this.lateWatch := ""      ; after a stop that had to end a run: the timer watching for a late game
         this.exitAfterWatch := false  ; the window was closed during that watch: exit when it ends
         this.request := ""        ; the player-count request in flight
@@ -469,6 +470,7 @@ class SetupWindow {
             if problem = ""
                 problem := "Couldn't set up Seed when pinged: " err.Message
         }
+        this.saveProblem := problem
         if problem != "" {
             this.Status(problem, Look.FLARE)
             return false
@@ -497,25 +499,29 @@ class SetupWindow {
             return
         }
         this.Save()
+        ; If that couldn't save or set up the schedule, what's said next comes
+        ; after why, not instead of it: tomorrow's run may not be there.
+        say(text, rgb := Look.MIST) => this.saveProblem = "" ? this.Status(text, rgb)
+            : this.Status(this.saveProblem " " text, Look.FLARE)
         ; A run stops at once in these cases, so say why here rather than "started".
         if this.count != "" && this.count >= this.config.seeded_threshold {
-            this.Status("The server is already seeded (" this.count " players), so there's nothing to do.")
+            say("The server is already seeded (" this.count " players), so there's nothing to do.")
             return
         }
         if HllGame(this.config).Running() {
-            this.Status("The game is already open. Close it first: Seed now won't take over a game you're playing.")
+            say("The game is already open. Close it first: Seed now won't take over a game you're playing.")
             return
         }
         try {
             this.spawned := this.StartRun()
         } catch as err {
             Logs.Exception("Couldn't start seeding", err)
-            this.Status("Couldn't start seeding: " err.Message, Look.FLARE)
+            say("Couldn't start seeding: " err.Message, Look.FLARE)
             return
         }
         this.StopLateWatch()  ; the game is this run's to open now
         this.seeding := true
-        this.Status("Seeding started. The game will open shortly; leave the mouse and keyboard alone while it joins.")
+        say("Seeding started. The game will open shortly; leave the mouse and keyboard alone while it joins.")
     }
 
     ; Starts a seeding run in its own process. Returns its process ID.

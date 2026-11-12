@@ -51,6 +51,51 @@ class MiscTests {
         Assert(InStr(text, '"crcon_url": "https://syn-stats-nam.radicalgamingstats.com/api/get_public_info"'), text)
     }
 
+    ; The file can be edited by hand. A value that can't be used keeps its
+    ; default and is named, rather than breaking a run halfway (text for a
+    ; number), ending every run at once (no player count to reach) or having
+    ; a run ask the stats page without a pause (0 seconds between looks).
+    static Test_settings_that_cant_be_used_keep_their_defaults() {
+        path := App.Dir "\config.json"
+        FileAppend('{"start_time": "06:35", "launcher": "epic", "leave_delay_minutes": 2.5, "crcon_url": "ftp://example.com/x", '
+            . '"seeded_threshold": null, "steam_app_id": "3079210", "process_name": {"exe": "x"}, "auto_update": "false", '
+            . '"pinged_from": "25:00", "poll_seconds": 0, "max_restarts": 2.5, "max_minutes": "abc"}', path, "UTF-8-RAW")
+        config := SeederConfig.Load(path)
+        AssertEq([config.start_time, config.launcher, config.leave_delay_minutes], ["06:35", "epic", 2.5])
+        bad := ["crcon_url", "seeded_threshold", "steam_app_id", "process_name", "auto_update", "pinged_from",
+            "poll_seconds", "max_restarts", "max_minutes"]
+        AssertEq(config.ignored, bad)
+        usual := SeederConfig()
+        for name in bad
+            AssertEq(config.%name%, usual.%name%, name)
+        AssertEq(usual.ignored, [])
+    }
+
+    static Test_every_default_setting_passes_its_own_check() {
+        for field in SeederConfig.FIELDS
+            Assert(SeederConfig.Valid(field[1], field[2]), field[1])
+        Assert(!SeederConfig.Valid("no_such_setting", 1))
+    }
+
+    ; Left blank (or null) by hand, process_name means any HLL build: that stays.
+    static Test_a_blank_process_name_is_still_a_setting() {
+        path := App.Dir "\config.json"
+        FileAppend('{"process_name": null, "epic_app_name": ""}', path, "UTF-8-RAW")
+        config := SeederConfig.Load(path)
+        AssertEq([config.process_name, config.epic_app_name, config.ignored], ["", "", []])
+    }
+
+    ; What a saved file holds always loads back whole.
+    static Test_saved_settings_all_pass_the_check() {
+        path := App.Dir "\config.json"
+        config := SeederConfig()
+        config.seed_when_pinged := true, config.auto_update := false, config.pinged_from := "8:30"
+        config.Save(path)
+        loaded := SeederConfig.Load(path)
+        AssertEq(loaded.ignored, [])
+        AssertEq([loaded.seed_when_pinged, loaded.auto_update, loaded.pinged_from], [1, 0, "8:30"])
+    }
+
     static Test_broken_settings_file_is_an_error() {
         path := App.Dir "\config.json"
         FileAppend("{not json", path, "UTF-8-RAW")
@@ -80,6 +125,49 @@ class MiscTests {
 
     static Test_fetch_is_empty_when_unreachable() {
         AssertEq(ServerStats.Fetch("http://127.0.0.1:9/nothing", 1), "")
+    }
+
+    ; The stats page is someone else's. It gets one time limit in all, however
+    ; slowly it answers, and an answer far bigger than a real one is refused.
+    static Test_fetch_gives_the_stats_page_one_time_limit_and_a_size_limit() {
+        answer := FakeResponse(LIVE_STATS)
+        asked := []
+        start(this, url, accept, timeout, async) {
+            asked.Push([url, accept, timeout, async])
+            return answer
+        }
+        Patches.Set(Http, "Start", start)
+        AssertEq(ServerStats.Fetch("https://stats.example/api", 2).players, 11)
+        AssertEq(asked, [["https://stats.example/api", "application/json", 2, true]])
+        Logs.capture := []
+        answer := FakeResponse(LIVE_STATS, false)  ; never answers
+        t0 := A_TickCount
+        AssertEq(ServerStats.Fetch("https://stats.example/api", 0.3), "")
+        took := A_TickCount - t0
+        Assert(answer.aborted, "the request wasn't stopped")
+        Assert(took >= 300 && took < 3000, "took " took " ms")
+        Assert(InStr(Logs.capture[1], "no answer in 0.3 seconds"), Logs.capture[1])
+        pad := "x"
+        while StrLen(pad) <= ServerStats.MAX_BYTES
+            pad .= pad
+        answer := FakeResponse('{"result": {"player_count": 11, "pad": "' pad '"}}')
+        AssertEq(ServerStats.Fetch("https://stats.example/api", 2), "")
+        Assert(InStr(Logs.capture[2], "the answer is too big"), SubStr(Logs.capture[2], 1, 200))
+    }
+
+    ; A seed-call check asks without following a redirect; everything else follows them.
+    static Test_requests_follow_redirects_unless_told_not_to() {
+        real := Http.Start
+        sent := []
+        start(this, url, accept := "application/json", timeout := 15, async := false, redirects := true) {
+            sent.Push([url, async, redirects])
+            return FakeResponse("{}")
+        }
+        Patches.Set(Http, "Start", start)
+        SeedCalls._Send("https://calls.example/seed-call")
+        AssertEq(Http.Text("https://files.example/x"), "{}")
+        AssertEq(sent, [["https://calls.example/seed-call", true, false], ["https://files.example/x", false, true]])
+        Assert(real.MaxParams >= 6, "Http.Start takes no redirects setting")
     }
 
     ; WinHTTP hands back a new array for every read of ResponseBody, freed as

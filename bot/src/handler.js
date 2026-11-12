@@ -22,7 +22,7 @@ const CHANNEL_MESSAGE = 4;
 const EPHEMERAL = 1 << 6;
 
 // Interaction payloads are a few kilobytes; anything far bigger isn't Discord.
-const MAX_BODY_CHARS = 64 * 1024;
+export const MAX_BODY_BYTES = 64 * 1024;
 
 // Discord throws away a reply that comes more than 3 seconds after it sent
 // /seed. A seed is called only if the flag can store it this soon after the
@@ -93,8 +93,8 @@ async function handleInteraction(request, deps) {
   if (deps.problems.includes('DISCORD_PUBLIC_KEY')) {
     return text('Bad request signature. (The bot is missing its DISCORD_PUBLIC_KEY setting.)', 401);
   }
-  const body = await request.text();
-  if (body.length > MAX_BODY_CHARS) return text('Too big.', 413);
+  const body = await readBody(request, MAX_BODY_BYTES);
+  if (body === null) return text('Too big.', 413);
   const signed = await verifyRequest(
     deps.config.publicKey,
     request.headers.get('X-Signature-Ed25519'),
@@ -117,6 +117,36 @@ async function handleInteraction(request, deps) {
   } catch {
     return json(privateReply(NOT_CALLED));
   }
+}
+
+// The request's body as text, or null if it's longer than ``maxBytes``. One
+// that says it's too long isn't read at all, and one that turns out to be is
+// dropped as soon as it passes the limit. The address is public and this
+// comes before the signature check, so nobody can make the Worker take in a
+// huge body.
+async function readBody(request, maxBytes) {
+  if (Number(request.headers.get('Content-Length')) > maxBytes) return null;
+  if (!request.body) return '';
+  const reader = request.body.getReader();
+  const chunks = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > maxBytes) {
+      await reader.cancel().catch(() => {});
+      return null;
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(size);
+  let at = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, at);
+    at += chunk.byteLength;
+  }
+  return new TextDecoder().decode(bytes);
 }
 
 // The answer to /seed. Every refusal is seen only by the person who typed it.

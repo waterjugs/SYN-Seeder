@@ -76,6 +76,9 @@ Main() {
         Logs.Error("Settings file " SeederConfig.DefaultPath " is broken (" err.Message "); using defaults")
         config := SeederConfig()
     }
+    if config.ignored.Length
+        Logs.Warning("Settings file " SeederConfig.DefaultPath " has a value that can't be used for "
+            . JoinList(config.ignored) "; using the default instead")
     if opts.unknown.Length
         Logs.Warning("Ignoring unknown arguments: " JoinList(opts.unknown, " "))
     if opts.record

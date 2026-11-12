@@ -9,10 +9,13 @@ class Http {
     static Get(url, accept := "application/json", timeout := 15) => Http.Check(Http.Start(url, accept, timeout))
 
     ; Sends a GET request. With ``async``, returns at once: Http.Done(request)
-    ; says when the answer is in.
-    static Start(url, accept := "application/json", timeout := 15, async := false) {
+    ; says when the answer is in. Without ``redirects``, an answer that sends
+    ; the request somewhere else is taken as it is, not followed.
+    static Start(url, accept := "application/json", timeout := 15, async := false, redirects := true) {
         req := ComObject("WinHttp.WinHttpRequest.5.1")
         req.Open("GET", url, async)
+        if !redirects
+            req.Option[6] := false  ; WinHttpRequestOption_EnableRedirects
         req.SetRequestHeader("User-Agent", Http.agent)
         req.SetRequestHeader("Accept", accept)
         ms := Round(timeout * 1000)
@@ -43,6 +46,29 @@ class Http {
 
     ; The body of a GET request as text (read as UTF-8).
     static Text(url, accept := "application/json", timeout := 15) => Http.BodyText(Http.Get(url, accept, timeout))
+
+    ; Like Text, for a page someone else runs. It gives up ``timeout`` seconds
+    ; after asking, however slowly an answer trickles in (Get's time limits
+    ; are for each step, so they never add up to one), and refuses an answer
+    ; over ``maxBytes``. The script keeps taking its own messages while it
+    ; waits, so a stop request isn't held up behind a slow page.
+    static TextWithin(url, accept, timeout, maxBytes) {
+        req := Http.Start(url, accept, timeout, true)
+        deadline := A_TickCount + Round(timeout * 1000)
+        while !Http.Done(req) {
+            if A_TickCount >= deadline {
+                try req.Abort()
+                throw Error("no answer in " Format("{:g}", timeout) " seconds")
+            }
+            Sleep(20)
+        }
+        Http.Check(req)
+        body := req.ResponseBody
+        Http._Bytes(body, &size)
+        if size > maxBytes
+            throw Error("the answer is too big (" size " bytes)")
+        return Http.BodyText(req)
+    }
 
     ; Saves the body of a GET request to ``path``. Returns its size in bytes.
     static Download(url, path, accept := "application/octet-stream", timeout := 30) => Http.Save(Http.Get(url, accept, timeout), path)
@@ -177,6 +203,8 @@ class RepoFiles {
 
 ; The server's population, from its CRCON public info page.
 class ServerStats {
+    static MAX_BYTES := 1024 * 1024  ; a real answer is a few hundred bytes
+
     ; {name, players, allied, axis, timeRemaining} from the page's JSON. Throws if it reports a failure.
     static Parse(payload) {
         if !(payload is Map)
@@ -202,10 +230,11 @@ class ServerStats {
         }
     }
 
-    ; The server's status, or "" when the server or the page can't be reached.
+    ; The server's status, or "" when the server or the page can't be reached,
+    ; doesn't answer within ``timeout`` seconds, or sends far too much.
     static Fetch(url, timeout := 10) {
         try {
-            return ServerStats.Read(Http.Text(url, "application/json", timeout))
+            return ServerStats.Read(Http.TextWithin(url, "application/json", timeout, ServerStats.MAX_BYTES))
         } catch as err {
             Logs.Warning("Could not read server status from " url ": " err.Message)
             return ""

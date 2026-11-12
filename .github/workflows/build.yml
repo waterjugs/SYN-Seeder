@@ -9,8 +9,12 @@ on:
   push:
   workflow_dispatch:
 
+# Read-only unless a job says otherwise. Only the release and scan jobs may
+# write, for the draft release: installed copies update themselves from
+# whatever release is published here, so the build job, with everything it
+# downloads, never holds a token that could publish one.
 permissions:
-  contents: write  # to make and update draft releases
+  contents: read
 
 concurrency:
   group: build-${{ github.ref }}
@@ -31,6 +35,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false  # nothing here pushes, so the token isn't left in the folder
 
       - name: Get AutoHotkey and Ahk2Exe
         shell: pwsh
@@ -76,6 +82,13 @@ jobs:
             exit 1
           fi
           echo "SynSeeder $version"
+
+      - name: Check that run_ahk.ps1 passes arguments whole
+        shell: pwsh
+        run: |
+          # One with a space or a quote in it, like a path under C:\Users\Jane Doe, must arrive as one.
+          ./tools/run_ahk.ps1 -Program python -Arguments '-c', 'import sys; print(sys.argv[1:])', 'a b', 'c"d', 'e f\', '' -Seconds 60 `
+            -Expect '^\[''a b'', ''c"d'', ''e f\\\\'', ''''\]$'
 
       - name: Check that the scripts load
         shell: pwsh
@@ -160,14 +173,28 @@ jobs:
             window.png
           if-no-files-found: ignore
 
+  release:
+    # A v* tag only, and a job of its own so the build above needs no token
+    # that can write.
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write  # to make the draft release
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: SynSeeder
+          path: dist
+
       - name: Make a draft release
         # A draft, so the scan below sees this exact exe first. Installed
         # copies only see a release once it's published on GitHub (a draft
         # never counts as the latest release).
-        if: startsWith(github.ref, 'refs/tags/v')
-        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           sha=$(sha256sum dist/SynSeeder.exe | cut -d' ' -f1)
           docs="https://github.com/$GITHUB_REPOSITORY/blob/$GITHUB_REF_NAME"
@@ -176,18 +203,49 @@ jobs:
           SHA-256 of SynSeeder.exe: \`$sha\`
 
           By using SynSeeder you agree to its [Terms of Service]($docs/TERMS.md). The [Privacy Policy]($docs/PRIVACY.md) explains what it stores and sends."
-          gh release create "$GITHUB_REF_NAME" dist/SynSeeder.exe \
-            --title "SynSeeder $GITHUB_REF_NAME" \
-            --notes "$notes" \
-            --draft
+          # A run started again finds the draft its first try made. That draft
+          # gets this build's exe and notes, rather than a second draft being
+          # made for the same tag. A published release is never changed.
+          found=$(gh release list --limit 200 --json tagName,isDraft \
+            --jq "map(select(.tagName == \"$GITHUB_REF_NAME\") | .isDraft | tostring) | join(\" \")")
+          case "$found" in
+            "")
+              gh release create "$GITHUB_REF_NAME" dist/SynSeeder.exe \
+                --title "SynSeeder $GITHUB_REF_NAME" \
+                --notes "$notes" \
+                --draft
+              ;;
+            true)
+              echo "Release $GITHUB_REF_NAME is already there as a draft; giving it this build's exe and notes"
+              gh release upload "$GITHUB_REF_NAME" dist/SynSeeder.exe --clobber
+              gh release edit "$GITHUB_REF_NAME" --notes "$notes"
+              ;;
+            false)
+              echo "::error::Release $GITHUB_REF_NAME is already published, so this run won't change it"
+              exit 1
+              ;;
+            *)
+              echo "::error::There's more than one release for $GITHUB_REF_NAME ($found); delete the extra ones and run this again"
+              exit 1
+              ;;
+          esac
 
   scan:
-    needs: build
-    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    # After the release job on a tag. On main and in runs started by hand
+    # that job is skipped, which mustn't skip this one with it.
+    needs: [build, release]
+    if: >-
+      ${{ !cancelled() && needs.build.result == 'success'
+      && (needs.release.result == 'success' || needs.release.result == 'skipped')
+      && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    permissions:
+      contents: write  # on a tag: to read the draft release and add the result to it
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false  # the steps that use the token are given it
 
       - uses: actions/download-artifact@v4
         with:

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CALL_DEADLINE_MS, CALL_TEXT, REPLY_DEADLINE_MS, handleRequest, SeedCallCache } from '../src/handler.js';
+import { CALL_DEADLINE_MS, CALL_TEXT, MAX_BODY_BYTES, REPLY_DEADLINE_MS, handleRequest, SeedCallCache } from '../src/handler.js';
 import {
   CALLER, CALLER_ROLE, CHANNEL, HOUR, MINUTE, OTHER_CHANNEL, SEEDERS_ROLE, SERVER,
   discordRequest, getRequest, makeDeps, makeKeys, newCallId, seedCommand,
@@ -62,6 +62,72 @@ test('a request without signature headers is refused', async () => {
   const deps = makeDeps(keys);
   const request = new Request('https://synseeder.example.workers.dev/interactions', { method: 'POST', body: '{"type":1}' });
   assert.equal((await handleRequest(request, deps)).status, 401);
+});
+
+// A body sent in ``chunk``-byte pieces for as long as it's read. ``sent`` counts the pieces.
+function endlessBody(chunk = 16 * 1024) {
+  const body = { sent: 0, cancelled: false };
+  body.stream = new ReadableStream({
+    pull(controller) {
+      body.sent++;
+      controller.enqueue(new Uint8Array(chunk).fill(0x20));
+    },
+    cancel() {
+      body.cancelled = true;
+    },
+  }, { highWaterMark: 0 });
+  return body;
+}
+
+test('a body that says it is too big is refused without being read', async () => {
+  const deps = makeDeps(keys);
+  const body = endlessBody();
+  const request = {
+    url: 'https://synseeder.example.workers.dev/interactions',
+    method: 'POST',
+    headers: new Headers({ 'Content-Length': String(MAX_BODY_BYTES + 1) }),
+    body: body.stream,
+  };
+  assert.equal((await handleRequest(request, deps)).status, 413);
+  assert.equal(body.sent, 0);
+});
+
+test('a body that turns out too big is dropped as soon as it passes the limit', async () => {
+  const deps = makeDeps(keys);
+  const body = endlessBody();  // and it says nothing of its length
+  const request = new Request('https://synseeder.example.workers.dev/interactions', { method: 'POST', body: body.stream, duplex: 'half' });
+  assert.equal((await handleRequest(request, deps)).status, 413);
+  assert.ok(body.cancelled, 'the rest of the body was left unread');
+  assert.ok(body.sent <= MAX_BODY_BYTES / (16 * 1024) + 2, `${body.sent} pieces were read`);
+});
+
+test('a body right at the limit is read, and one byte more is not', async () => {
+  const deps = makeDeps(keys);
+  const padded = bytes => {
+    const start = '{"type":1,"pad":"';
+    return start + 'a'.repeat(bytes - start.length - 2) + '"}';
+  };
+  assert.deepEqual(await run(deps, padded(MAX_BODY_BYTES)), { status: 200, body: { type: 1 } });
+  assert.equal((await run(deps, padded(MAX_BODY_BYTES + 1))).status, 413);
+  // The limit is in bytes: these characters take two each.
+  const wide = '{"type":1,"pad":"' + 'é'.repeat(MAX_BODY_BYTES / 2) + '"}';
+  assert.equal((await run(deps, wide)).status, 413);
+});
+
+test('a signed body is read the same whether it comes whole or in pieces', async () => {
+  const deps = makeDeps(keys);
+  const good = await discordRequest(keys, { type: 1, pad: 'é'.repeat(1000) }, { now: deps.clock.now });
+  const bytes = new Uint8Array(await good.clone().arrayBuffer());
+  let at = 0;
+  const pieces = new ReadableStream({
+    pull(controller) {
+      if (at >= bytes.length) return controller.close();
+      controller.enqueue(bytes.slice(at, at += 7));  // 7 bytes at a time splits the two-byte characters
+    },
+  });
+  const request = new Request(good.url, { method: 'POST', headers: good.headers, body: pieces, duplex: 'half' });
+  const response = await handleRequest(request, deps);
+  assert.deepEqual([response.status, await response.json()], [200, { type: 1 }]);
 });
 
 test('a signature more than 5 minutes old or ahead is refused', async () => {
