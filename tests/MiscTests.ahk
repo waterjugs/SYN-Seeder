@@ -51,6 +51,51 @@ class MiscTests {
         Assert(InStr(text, '"crcon_url": "https://syn-stats-nam.radicalgamingstats.com/api/get_public_info"'), text)
     }
 
+    ; The file can be edited by hand. A value that can't be used keeps its
+    ; default and is named, rather than breaking a run halfway (text for a
+    ; number), ending every run at once (no player count to reach) or having
+    ; a run ask the stats page without a pause (0 seconds between looks).
+    static Test_settings_that_cant_be_used_keep_their_defaults() {
+        path := App.Dir "\config.json"
+        FileAppend('{"start_time": "06:35", "launcher": "epic", "leave_delay_minutes": 2.5, "crcon_url": "ftp://example.com/x", '
+            . '"seeded_threshold": null, "steam_app_id": "3079210", "process_name": {"exe": "x"}, "auto_update": "false", '
+            . '"pinged_from": "25:00", "poll_seconds": 0, "max_restarts": 2.5, "max_minutes": "abc"}', path, "UTF-8-RAW")
+        config := SeederConfig.Load(path)
+        AssertEq([config.start_time, config.launcher, config.leave_delay_minutes], ["06:35", "epic", 2.5])
+        bad := ["crcon_url", "seeded_threshold", "steam_app_id", "process_name", "auto_update", "pinged_from",
+            "poll_seconds", "max_restarts", "max_minutes"]
+        AssertEq(config.ignored, bad)
+        usual := SeederConfig()
+        for name in bad
+            AssertEq(config.%name%, usual.%name%, name)
+        AssertEq(usual.ignored, [])
+    }
+
+    static Test_every_default_setting_passes_its_own_check() {
+        for field in SeederConfig.FIELDS
+            Assert(SeederConfig.Valid(field[1], field[2]), field[1])
+        Assert(!SeederConfig.Valid("no_such_setting", 1))
+    }
+
+    ; Left blank (or null) by hand, process_name means any HLL build: that stays.
+    static Test_a_blank_process_name_is_still_a_setting() {
+        path := App.Dir "\config.json"
+        FileAppend('{"process_name": null, "epic_app_name": ""}', path, "UTF-8-RAW")
+        config := SeederConfig.Load(path)
+        AssertEq([config.process_name, config.epic_app_name, config.ignored], ["", "", []])
+    }
+
+    ; What a saved file holds always loads back whole.
+    static Test_saved_settings_all_pass_the_check() {
+        path := App.Dir "\config.json"
+        config := SeederConfig()
+        config.seed_when_pinged := true, config.auto_update := false, config.pinged_from := "8:30"
+        config.Save(path)
+        loaded := SeederConfig.Load(path)
+        AssertEq(loaded.ignored, [])
+        AssertEq([loaded.seed_when_pinged, loaded.auto_update, loaded.pinged_from], [1, 0, "8:30"])
+    }
+
     static Test_broken_settings_file_is_an_error() {
         path := App.Dir "\config.json"
         FileAppend("{not json", path, "UTF-8-RAW")

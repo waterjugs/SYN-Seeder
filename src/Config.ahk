@@ -38,12 +38,16 @@ class SeederConfig {
     __New() {
         for field in SeederConfig.FIELDS
             this.%field[1]% := field[2]
+        this.ignored := []  ; settings the file had that couldn't be used (see Load)
     }
 
     static DefaultPath => App.Dir "\config.json"
 
     ; The saved settings, or the defaults if there are none. Throws if the file
-    ; can't be read or isn't JSON; settings it doesn't know are ignored.
+    ; can't be read or isn't JSON; settings it doesn't know are ignored. A
+    ; setting whose value can't be used (see Valid) keeps its default, and its
+    ; name goes in ``ignored`` for whoever wants to say so: nothing is logged
+    ; here, since the seed-call check loads the settings once a minute.
     static Load(path := "") {
         path := path != "" ? path : SeederConfig.DefaultPath
         config := SeederConfig()
@@ -52,10 +56,52 @@ class SeederConfig {
         data := Json.Load(FileRead(path, "UTF-8"))
         if !(data is Map)
             throw ValueError("the settings aren't a JSON object")
-        for field in SeederConfig.FIELDS
-            if data.Has(field[1])
-                config.%field[1]% := data[field[1]]
+        for field in SeederConfig.FIELDS {
+            name := field[1]
+            if !data.Has(name)
+                continue
+            if SeederConfig.Valid(name, data[name])
+                config.%name% := data[name]
+            else
+                config.ignored.Push(name)
+        }
         return config
+    }
+
+    ; True if ``value``, as read from the file, can be used for the setting
+    ; ``name``. The file can be edited by hand, and a slip in it mustn't break
+    ; a run halfway, end every run at once, or have one ask the stats page
+    ; over and over without a pause.
+    static Valid(name, value) {
+        inRange(low, high) => (value is Integer || value is Float) && value >= low && value <= high
+        wholeIn(low, high) => value is Integer && value >= low && value <= high
+        switch name, true {
+            case "server_name", "launcher", "epic_app_name", "process_name":
+                return value is String
+            case "server_search":
+                return value is String && value != ""
+            case "crcon_url":
+                return value is String && RegExMatch(value, "i)^https?://\S+$") > 0
+            case "start_time", "pinged_from", "pinged_until":
+                return value is String && SeedCalls.MinuteOfDay(value, -1) >= 0
+            case "auto_update", "seed_when_pinged":  ; true and false are read as 1 and 0
+                return wholeIn(0, 1)
+            case "seeded_threshold":
+                return wholeIn(1, 1000)
+            case "steam_app_id":
+                return wholeIn(1, 0xFFFFFFFF)
+            case "max_restarts":
+                return wholeIn(0, 20)
+            case "leave_delay_minutes":
+                return inRange(0, 24 * 60)
+            case "poll_seconds", "anti_afk_seconds":
+                return inRange(5, 3600)
+            case "launch_timeout", "load_timeout":
+                return inRange(10, 3600)
+            case "max_minutes":
+                return inRange(1, 24 * 60)
+        }
+        return false
     }
 
     Save(path := "") {
