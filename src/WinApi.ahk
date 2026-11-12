@@ -116,6 +116,8 @@ class WinApi {
 
     static InFront(hwnd) => DllCall("GetForegroundWindow", "Ptr") = hwnd
 
+    static IsMinimised(hwnd) => DllCall("IsIconic", "Ptr", hwnd)
+
     ; The window in front, or 0 when there's none.
     static ForegroundWindow() => DllCall("GetForegroundWindow", "Ptr")
 
