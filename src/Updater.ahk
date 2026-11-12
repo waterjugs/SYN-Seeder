@@ -83,6 +83,10 @@ class Updater {
     static Download(release, dest, save := "") {
         part := dest ".part"
         try {
+            ; An exe is only ever run after it's been checked against GitHub's
+            ; own checksum of the file, so without one it isn't even fetched.
+            if release.sha256 = ""
+                throw Error("GitHub gave no checksum to check it by")
             if save
                 save(release.url, part)
             else
@@ -98,7 +102,7 @@ class Updater {
                 throw Error("it isn't a Windows program")
             if release.size && size != release.size
                 throw Error("got " size " bytes, expected " release.size)
-            if release.sha256 != "" && Sha256.File(part) != release.sha256
+            if Sha256.File(part) != release.sha256
                 throw Error("its checksum doesn't match")
             FileMove(part, dest, true)
             return true

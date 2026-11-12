@@ -176,6 +176,21 @@ class UpdateTests {
         }
     }
 
+    ; Without GitHub's checksum there's nothing to check the exe against, so
+    ; it isn't fetched, let alone run.
+    static Test_download_needs_githubs_checksum() {
+        folder := App.Dir "\dl"
+        DirCreate(folder)
+        asked := []
+        Logs.capture := []
+        for digest in ["<none>", "", "md5:0123456789abcdef0123456789abcdef"] {
+            release := Updater.ParseRelease(ReleasePayload(, Map("asset.digest", digest)))
+            Assert(!Updater.Download(release, folder "\" Updater.UPDATE_NAME, (url, path) => (asked.Push(url), WriteExe(path))), digest)
+            AssertEq([asked, FilesIn(folder)], [[], []], digest)
+        }
+        Assert(InStr(Logs.capture[1], "GitHub gave no checksum"), Logs.capture[1])
+    }
+
     static Test_download_survives_a_dropped_connection() {
         folder := App.Dir "\dl"
         DirCreate(folder)
