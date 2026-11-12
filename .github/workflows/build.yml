@@ -83,6 +83,13 @@ jobs:
           fi
           echo "SynSeeder $version"
 
+      - name: Check that run_ahk.ps1 passes arguments whole
+        shell: pwsh
+        run: |
+          # One with a space or a quote in it, like a path under C:\Users\Jane Doe, must arrive as one.
+          ./tools/run_ahk.ps1 -Program python -Arguments '-c', 'import sys; print(sys.argv[1:])', 'a b', 'c"d', 'e f\', '' -Seconds 60 `
+            -Expect '^\[''a b'', ''c"d'', ''e f\\\\'', ''''\]$'
+
       - name: Check that the scripts load
         shell: pwsh
         run: |

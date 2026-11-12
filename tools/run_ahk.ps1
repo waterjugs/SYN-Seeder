@@ -15,8 +15,15 @@ param(
 )
 $out = [IO.Path]::GetTempFileName()
 $err = [IO.Path]::GetTempFileName()
+# Start-Process joins the arguments with spaces and quotes none of them, so
+# one with a space in it (a path under C:\Users\Jane Doe) would arrive as
+# two. Each is quoted here the way Windows programs read their command line.
+$quoted = @(foreach ($argument in $Arguments) {
+    if ($argument -ne '' -and $argument -notmatch '[\s"]') { $argument }
+    else { '"' + ($argument -replace '(\\*)"', '$1$1\"' -replace '(\\+)$', '$1$1') + '"' }
+})
 $options = @{ FilePath = $Program; NoNewWindow = $true; PassThru = $true; RedirectStandardOutput = $out; RedirectStandardError = $err }
-if ($Arguments.Count) { $options.ArgumentList = $Arguments }
+if ($quoted.Count) { $options.ArgumentList = $quoted }
 $process = Start-Process @options
 $null = $process.Handle  # keeps the exit code readable once it has ended
 $finished = $process.WaitForExit($Seconds * 1000)
