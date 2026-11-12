@@ -110,6 +110,19 @@ class WinApi {
 
     static InFront(hwnd) => DllCall("GetForegroundWindow", "Ptr") = hwnd
 
+    ; The window in front, or 0 when there's none.
+    static ForegroundWindow() => DllCall("GetForegroundWindow", "Ptr")
+
+    ; The name of the program running as ``pid``, or "" if it has gone.
+    static ProcessName(pid) {
+        try
+            return ProcessGetName(pid)
+        catch
+            return ""
+    }
+
+    static OwnPid() => DllCall("GetCurrentProcessId", "UInt")
+
     static ForegroundPid() {
         hwnd := DllCall("GetForegroundWindow", "Ptr")
         return hwnd ? WinApi.WindowPid(hwnd) : 0

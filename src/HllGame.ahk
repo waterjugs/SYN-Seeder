@@ -10,7 +10,9 @@ class HllGame {
     static EPIC_APP_NAME := "d7361b7d6fa94097bcadeac4b1f785fb"  ; HLL Vietnam's AppName in the Epic store (2026-10-29)
     ; Seconds without mouse or keyboard use before the seeder pulls the game in
     ; front of whatever someone was doing; until then it waits for them.
-    static IDLE_BEFORE_TAKEOVER := 15
+    ; Someone reading or watching a video can leave both alone for a while, so
+    ; this is long (before version 1.1.0 it was 15 s, which cut in on them).
+    static IDLE_BEFORE_TAKEOVER := 300
     ; Seconds to keep watching for a game the launcher starts late, to close it.
     static LATE_START_SECONDS := 90
 
@@ -181,23 +183,36 @@ class HllGame {
     ; Brings the game to the front. True if it is the foreground window, so
     ; keys and clicks will land in it.
     ;
-    ; If someone is using another window, it waits for them: once the mouse
-    ; and keyboard have been idle for IDLE_BEFORE_TAKEOVER seconds it takes
-    ; the game to the front itself. Meanwhile the game's taskbar button
-    ; flashes to show it's waiting.
+    ; If another program's window is in front, someone may be using it, so it
+    ; waits for them: once the mouse and keyboard have been idle for
+    ; IDLE_BEFORE_TAKEOVER seconds it takes the game to the front itself.
+    ; Meanwhile the game's taskbar button flashes to show it's waiting.
+    ;
+    ; Until then it doesn't even ask Windows to switch, because Windows
+    ; doesn't always say no while someone uses another window: once the
+    ; mouse and keyboard have been idle for its foreground lock timeout
+    ; (200 s by default, less on some PCs) it lets any program take the front.
     Focus() {
         hwnd := this.Window()
         if !hwnd
             return false
         WinApi.SetInputTarget(hwnd)  ; input is dropped whenever this isn't in front
-        if WinApi.BringToFront(hwnd) {
-            this._InFront()
-            return true
+        front := WinApi.ForegroundWindow()
+        if HllGame.FrontIsFree(front, hwnd) {
+            if WinApi.BringToFront(hwnd) {
+                if front = hwnd && this.focusWait = "in use"
+                    Logs.Info("The game is in front again, but not because of SynSeeder: you switched to it, "
+                        . "or the game did (mouse and keyboard last used " Round(WinApi.UserIdleSeconds()) "s ago)")
+                this._InFront()
+                return true
+            }
+            if WinApi.InFront(hwnd)
+                return false  ; in front, but still restoring from minimised: ready on the next try
         }
         idle := WinApi.UserIdleSeconds()
         if idle >= HllGame.IDLE_BEFORE_TAKEOVER {
             if WinApi.ForceToFront(hwnd, !this.altTapped) {
-                Logs.Info("Brought the game to the front (mouse and keyboard idle for " Round(idle) "s)")
+                Logs.Info("Brought the game to the front (mouse and keyboard idle for " MinutesText(idle) ")")
                 this._InFront()
                 return true
             }
@@ -211,7 +226,7 @@ class HllGame {
         if wait != this.focusWait {
             if wait = "in use" {
                 Logs.Warning("Another window is in front and the PC is in use; waiting until the mouse "
-                    . "and keyboard have been idle for " HllGame.IDLE_BEFORE_TAKEOVER "s")
+                    . "and keyboard have been idle for " MinutesText(HllGame.IDLE_BEFORE_TAKEOVER))
                 WinApi.Flash(hwnd)
             } else {
                 Logs.Warning("Couldn't bring the game to the front (" HllGame.ForegroundApp() " has it); "
@@ -220,6 +235,22 @@ class HllGame {
             this.focusWait := wait
         }
         return false
+    }
+
+    ; True if the game can come to the front without taking it from anyone:
+    ; no window is in front (``front`` is 0), or one of the game's own is, or
+    ; one of SynSeeder's (its window, after Seed now). Any other program's
+    ; window may be in use.
+    static FrontIsFree(front, game) {
+        if !front || front = game
+            return true
+        pid := WinApi.WindowPid(front)
+        if !pid
+            return false
+        if pid = WinApi.WindowPid(game)
+            return true
+        name := WinApi.ProcessName(pid)  ; SynSeeder.exe, or "SynSeeder (1).exe" if downloaded twice
+        return name != "" && (name = WinApi.ProcessName(WinApi.OwnPid()) || name ~= "i)^SynSeeder\b.*\.exe$")
     }
 
     ; Name of the program whose window is in front, for the log.
