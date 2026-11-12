@@ -225,7 +225,7 @@ function limitMessage(verdict) {
 }
 
 // The message for a seed call, after the pings.
-export const CALL_TEXT = 'Time to hop in the Syndicate | Competitive Server to get it seeded';
+export const CALL_TEXT = 'Time to hop in the Syndicate | Competitive Server to get it seeded!';
 
 // The reply everyone in the channel sees. It pings only the roles in
 // SEEDERS_ROLE_ID, if any. It doesn't name the caller: Discord already shows

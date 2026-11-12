@@ -101,7 +101,7 @@ test('a Syngineer calls a seed, and the reply pings the chosen role, without nam
   assert.equal(status, 200);
   assert.equal(body.type, 4);
   assert.equal(body.data.flags, undefined, 'the call is public');
-  assert.equal(body.data.content, `<@&${SEEDERS_ROLE}> Time to hop in the Syndicate | Competitive Server to get it seeded`);
+  assert.equal(body.data.content, `<@&${SEEDERS_ROLE}> Time to hop in the Syndicate | Competitive Server to get it seeded!`);
   assert.equal(body.data.content, `<@&${SEEDERS_ROLE}> ${CALL_TEXT}`);
   assert.ok(!body.data.content.includes(CALLER), 'the caller is not named');
   assert.deepEqual(body.data.allowed_mentions, { parse: [], users: [], roles: [SEEDERS_ROLE] });

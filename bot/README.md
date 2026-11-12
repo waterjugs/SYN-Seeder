@@ -8,7 +8,7 @@ and it needs no new roles.
 1. A Syngineer types **/seed** in the SynSeeder channel.
 2. The bot checks the call (see below). If it's fine, it replies in the
    channel: "Time to hop in the Syndicate | Competitive Server to get it
-   seeded". It can also ping one or two roles first, if you choose them in
+   seeded!" It can also ping one or two roles first, if you choose them in
    step 6. The reply doesn't name the caller, but Discord shows who used
    /seed above it, as it does for any command.
 3. Every PC with **Seed when pinged** ticked in SynSeeder (version 1.1.0 and
