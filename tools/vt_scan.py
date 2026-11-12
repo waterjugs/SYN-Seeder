@@ -19,7 +19,9 @@ Exit code: 0 when every file scanned clean, 1 when any engine flagged
 something, 2 when a scan couldn't finish. Uses only the standard library.
 
 The free API allows 4 requests a minute, so it waits at least 16 seconds
-between requests. A result is a snapshot: engines keep updating their
+between requests. A request that VirusTotal answers with a server error, or
+doesn't answer at all, is tried again a few times before the scan gives up,
+since a scan asks about once a minute for up to 45 minutes. A result is a snapshot: engines keep updating their
 verdicts, so a file that's clean today can be flagged tomorrow, and the other
 way round.
 """
@@ -27,6 +29,7 @@ way round.
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
 import os
 import sys
@@ -40,6 +43,9 @@ API = "https://www.virustotal.com/api/v3"
 DIRECT_LIMIT = 32 * 1024 * 1024  # bigger files need a one-time upload URL
 REQUEST_GAP = 16                 # seconds; the free API allows 4 requests a minute
 TIMEOUT = 45 * 60                # give up waiting for engines after this long
+TRIES = 5                        # times a request is sent before its failure counts
+RETRY_STATUS = {500, 502, 503, 504}  # VirusTotal's own trouble, which usually passes
+RETRY_WAIT = 30                  # seconds before trying again after one of those, or no answer
 FLAGGED = {"malicious", "suspicious"}
 
 _last_request = 0.0
@@ -51,18 +57,27 @@ def _request(method: str, url: str, key: str, body: bytes | None = None, headers
     if wait > 0:
         time.sleep(wait)
     request = urllib.request.Request(url, data=body, method=method, headers={"x-apikey": key, **(headers or {})})
-    for attempt in range(5):
+    where = f"{method} {url.split('?')[0]}"
+    for attempt in range(TRIES):
+        last = attempt == TRIES - 1
         _last_request = time.monotonic()
         try:
             with urllib.request.urlopen(request, timeout=600) as response:
                 return json.loads(response.read() or b"{}")
         except urllib.error.HTTPError as error:
-            if error.code == 429 and attempt < 4:  # over the rate limit: back off and retry
+            if not last and error.code == 429:  # over the rate limit: back off and retry
                 time.sleep(60)
                 continue
+            if not last and error.code in RETRY_STATUS:
+                time.sleep(RETRY_WAIT)
+                continue
             detail = error.read().decode("utf-8", "replace")[:300]
-            raise RuntimeError(f"{method} {url.split('?')[0]} failed: HTTP {error.code} {detail}") from None
-    raise RuntimeError(f"{method} {url} kept hitting the rate limit")
+            raise RuntimeError(f"{where} failed: HTTP {error.code} {detail}") from None
+        except (OSError, http.client.HTTPException) as error:  # no answer: refused, reset, timed out, cut short
+            if last:
+                raise RuntimeError(f"{where} failed: {error}") from None
+            time.sleep(RETRY_WAIT)
+    raise AssertionError("the last try either returns or raises")
 
 
 def _multipart(path: Path) -> tuple[bytes, str]:
