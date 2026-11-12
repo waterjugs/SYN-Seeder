@@ -155,6 +155,21 @@ class MiscTests {
         Assert(InStr(Logs.capture[2], "the answer is too big"), SubStr(Logs.capture[2], 1, 200))
     }
 
+    ; A seed-call check asks without following a redirect; everything else follows them.
+    static Test_requests_follow_redirects_unless_told_not_to() {
+        real := Http.Start
+        sent := []
+        start(this, url, accept := "application/json", timeout := 15, async := false, redirects := true) {
+            sent.Push([url, async, redirects])
+            return FakeResponse("{}")
+        }
+        Patches.Set(Http, "Start", start)
+        SeedCalls._Send("https://calls.example/seed-call")
+        AssertEq(Http.Text("https://files.example/x"), "{}")
+        AssertEq(sent, [["https://calls.example/seed-call", true, false], ["https://files.example/x", false, true]])
+        Assert(real.MaxParams >= 6, "Http.Start takes no redirects setting")
+    }
+
     ; WinHTTP hands back a new array for every read of ResponseBody, freed as
     ; soon as nothing holds it; the text must be copied while it's held.
     static Test_response_text_survives_the_array_being_freed() {

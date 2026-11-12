@@ -219,18 +219,9 @@ class SeedCalls {
         return SeedCalls.Read(req)
     }
 
-    ; Sends the request without waiting for the answer (tests swap this).
-    static _Send(url) {
-        req := ComObject("WinHttp.WinHttpRequest.5.1")
-        req.Open("GET", url, true)
-        req.Option[6] := false  ; WinHttpRequestOption_EnableRedirects
-        req.SetRequestHeader("User-Agent", Http.agent)
-        req.SetRequestHeader("Accept", "application/json")
-        ms := SeedCalls.TIMEOUT * 1000
-        req.SetTimeouts(ms, ms, ms, ms)  ; resolve, connect, send, receive
-        req.Send()
-        return req
-    }
+    ; Sends the request without waiting for the answer or following a
+    ; redirect (tests swap this).
+    static _Send(url) => Http.Start(url, "application/json", SeedCalls.TIMEOUT, true, false)
 
     static Read(req) {
         Http.Check(req)

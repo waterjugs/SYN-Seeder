@@ -9,10 +9,13 @@ class Http {
     static Get(url, accept := "application/json", timeout := 15) => Http.Check(Http.Start(url, accept, timeout))
 
     ; Sends a GET request. With ``async``, returns at once: Http.Done(request)
-    ; says when the answer is in.
-    static Start(url, accept := "application/json", timeout := 15, async := false) {
+    ; says when the answer is in. Without ``redirects``, an answer that sends
+    ; the request somewhere else is taken as it is, not followed.
+    static Start(url, accept := "application/json", timeout := 15, async := false, redirects := true) {
         req := ComObject("WinHttp.WinHttpRequest.5.1")
         req.Open("GET", url, async)
+        if !redirects
+            req.Option[6] := false  ; WinHttpRequestOption_EnableRedirects
         req.SetRequestHeader("User-Agent", Http.agent)
         req.SetRequestHeader("Accept", accept)
         ms := Round(timeout * 1000)
