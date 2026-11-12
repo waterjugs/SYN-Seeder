@@ -338,6 +338,51 @@ class WindowTests {
         WindowTests.With(check)
     }
 
+    ; Seed now seeds even if the schedule couldn't be set up, but what it says
+    ; next mustn't cover that up: tomorrow's run may not be there.
+    static Test_seed_now_keeps_a_failed_save_in_view() {
+        denied := "Couldn't set up the schedule: Access is denied. "
+        check(w, calls) {
+            Patches.Set(DailyTask, "Schedule", (*) => WindowTests.Raise("Access is denied."))
+            Logs.capture := []
+            w.SeedNow()
+            AssertEq(calls, ["seed"])
+            AssertEq(WindowTests.StatusOf(w), denied "Seeding started. The game will open shortly; "
+                . "leave the mouse and keyboard alone while it joins.")
+            AssertEq([w.statusColor, w.seeding], [Look.FLARE, true])
+        }
+        WindowTests.With(check)
+        check2(w, calls) {
+            Patches.Set(DailyTask, "Schedule", (*) => WindowTests.Raise("Access is denied."))
+            Logs.capture := []
+            w.ShowServer(84)
+            w.SeedNow()
+            AssertEq(calls, [])
+            AssertEq(WindowTests.StatusOf(w), denied "The server is already seeded (84 players), so there's nothing to do.")
+            AssertEq(w.statusColor, Look.FLARE)
+        }
+        WindowTests.With(check2)
+        check3(w, calls) {
+            Patches.Set(DailyTask, "Schedule", (*) => WindowTests.Raise("Access is denied."))
+            Patches.Set(SetupWindow.Prototype, "StartRun", (*) => WindowTests.Raise("Couldn't copy SynSeeder.exe"))
+            Logs.capture := []
+            w.SeedNow()
+            AssertEq(WindowTests.StatusOf(w), denied "Couldn't start seeding: Couldn't copy SynSeeder.exe")
+        }
+        WindowTests.With(check3)
+        ; A Save that works puts it behind us.
+        check4(w, calls) {
+            Patches.Set(DailyTask, "Schedule", (*) => WindowTests.Raise("Access is denied."))
+            Logs.capture := []
+            Assert(!w.Save())
+            Patches.Set(DailyTask, "Schedule", (this, start) => calls.Push("schedule " start))
+            w.SeedNow()
+            Assert(InStr(WindowTests.StatusOf(w), "Seeding started.") = 1, WindowTests.StatusOf(w))
+            AssertEq(w.statusColor, Look.MIST)
+        }
+        WindowTests.With(check4)
+    }
+
     static Test_stop_with_nothing_running() {
         check(w, calls) {
             w.StopSeeding()
