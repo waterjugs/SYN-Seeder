@@ -147,6 +147,17 @@ jobs:
           if (Test-Path selftest.log) { Get-Content selftest.log } else { echo "::error::The self-test wrote no log" }
           exit $code
 
+      - name: Start-up check of SynSeeder.exe
+        shell: pwsh
+        run: |
+          # What an installed SynSeeder asks of a new version before it
+          # updates to it (src\Updater.ahk): --check must exit with 0.
+          ./tools/run_ahk.ps1 -Program dist\SynSeeder.exe -Arguments '--check' -Seconds 240
+          $code = $LASTEXITCODE
+          Get-Content "$env:APPDATA\SynSeeder\seeder.log" -Tail 4 -ErrorAction SilentlyContinue
+          if ($code -ne 0) { echo "::error::SynSeeder.exe --check exited with $code" }
+          exit $code
+
       - name: Draw the window
         shell: pwsh
         run: |

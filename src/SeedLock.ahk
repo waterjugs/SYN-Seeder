@@ -93,4 +93,36 @@ class SeedLock {
         Run(QuoteArg(program) (arguments != "" ? " " arguments : ""), , , &pid)
         return pid
     }
+
+    ; Starts a program whose exit code is wanted. Returns {pid, handle}, for
+    ; ExitCode and then Forget (SeedLock's, so tests can swap them).
+    static Watch(program, arguments) {
+        pid := SeedLock.Spawn(program, arguments)
+        ; SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION: to wait for it and read its exit code
+        handle := DllCall("OpenProcess", "UInt", 0x00101000, "Int", false, "UInt", pid, "Ptr")
+        if !handle {
+            code := A_LastError
+            try ProcessClose(pid)
+            throw OSError(code)
+        }
+        return {pid: pid, handle: handle}
+    }
+
+    ; The exit code of a program started with Watch, or "" while it's running.
+    static ExitCode(watched) {
+        if DllCall("WaitForSingleObject", "Ptr", watched.handle, "UInt", 0, "UInt") != 0
+            return ""  ; WAIT_TIMEOUT: still running
+        if !DllCall("GetExitCodeProcess", "Ptr", watched.handle, "UInt*", &code := 0)
+            throw OSError()
+        return code
+    }
+
+    ; Done with a program started with Watch: ends it if it's still running.
+    static Forget(watched) {
+        try {
+            if SeedLock.ExitCode(watched) == ""
+                ProcessClose(watched.pid)
+        }
+        DllCall("CloseHandle", "Ptr", watched.handle)
+    }
 }

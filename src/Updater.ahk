@@ -6,6 +6,11 @@
 ; release and, if that's newer, downloads its SynSeeder.exe next to itself as
 ; SynSeeder-update.exe.
 ;
+; The new version is first asked to check itself: the old one starts
+; ``SynSeeder-update.exe --check``, which does the start of a seeding run
+; that needs no game, and waits for its exit code. Only a version that passes
+; is given the run; otherwise the old one carries on with it.
+;
 ; A running exe can't be overwritten, so the new version finishes the job.
 ; The old one lets go of the seeding lock and starts
 ; ``SynSeeder-update.exe --install-to <old exe> --old-pid <pid> --seed``; once
@@ -16,8 +21,8 @@
 ; SynSeeder-update.exe so the next run can hand over again without
 ; downloading it again.
 ;
-; A release that fails to start three times is skipped until a newer one is
-; out, so a bad release can't hold up every run.
+; A release that fails its check or fails to start three times is skipped
+; until a newer one is out, so a bad release can't hold up every run.
 
 class Updater {
     static LATEST_RELEASE := "https://api.github.com/repos/waterjugs/SYN-Seeder/releases/latest"
@@ -25,6 +30,7 @@ class Updater {
     static UPDATE_NAME := "SynSeeder-update.exe"
     static FAILURES_NAME := "update-failed.json"  ; in App.Dir: the release that last failed to start, and how often
     static MAX_FAILURES := 3
+    static CHECK_SECONDS := 180     ; for the new version's check of itself: it may have button images to download
     static HANDOVER_SECONDS := 120  ; for the new version to start; antivirus can take a while over a new exe
     static EXIT_SECONDS := 60       ; for the old version to exit once the new one has the lock
     static REPLACE_TRIES := 5       ; a second apart, once the old version has exited
@@ -164,7 +170,10 @@ class Updater {
         Logs.Info("Updating from v" App.VERSION " to " release.tag)
         if !(Updater.Downloaded(release, fresh) || Updater.Download(release, fresh))
             return false
-        result := Updater.HandOver(fresh, exe, release.tag, args, SeedClock(shouldStop))
+        clock := SeedClock(shouldStop)
+        result := Updater.Vet(fresh, release.tag, clock)
+        if result == true
+            result := Updater.HandOver(fresh, exe, release.tag, args, clock)
         if result == true
             return true
         if result != Updater.STOPPED
@@ -173,6 +182,43 @@ class Updater {
     }
 
     static STOPPED := "stopped"
+
+    ; Has the new exe check itself before the run is handed to it: started
+    ; with --check, it does the start of a seeding run that needs neither the
+    ; game nor the seeding lock (see RunCheck), and its exit code says how
+    ; that went. This process keeps the lock meanwhile.
+    ;
+    ; True if it passed. False if it failed, didn't finish in time or
+    ; couldn't be started; its download is then deleted, as after a hand-over
+    ; that failed. STOPPED if the run was asked to stop (``clock`` says when):
+    ; then nothing is started, or what was started is ended.
+    static Vet(fresh, tag, clock := "") {
+        clock := clock ? clock : SeedClock()
+        Sleep(-1)  ; take in a stop asked for while the update was downloading
+        check := "", result := false
+        try {
+            clock.Check()
+            check := SeedLock.Watch(fresh, "--check")
+            deadline := clock.Now() + Updater.CHECK_SECONDS
+            while (code := SeedLock.ExitCode(check)) == "" && clock.Now() < deadline
+                clock.Sleep(0.5)
+            if code == ""
+                Logs.Warning(tag " didn't finish its start-up check in " Updater.CHECK_SECONDS " s; carrying on with v" App.VERSION)
+            else if code != 0
+                Logs.Warning(tag " failed its start-up check (exit code " code "); carrying on with v" App.VERSION)
+            else
+                result := true
+        } catch SeedStopped {
+            result := Updater.STOPPED  ; the download is fine for the next run
+        } catch as err {
+            Logs.Warning("Couldn't check " tag ": " err.Message)
+        }
+        if check
+            SeedLock.Forget(check)
+        if !result
+            try FileDelete(fresh)
+        return result
+    }
 
     ; Starts the new exe to install itself over ``exe`` and take over this run.
     ;

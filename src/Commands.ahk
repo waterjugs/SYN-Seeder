@@ -1,12 +1,12 @@
 ; What SynSeeder.exe does when started with a command (see SynSeeder.ahk).
 
 ; The command line as {seed, record, minutes, every, maxMinutes, installTo,
-; oldPids, selftest, selftestLog, checkSeedCalls, unknown, passOn}. ``passOn``
+; oldPids, selftest, selftestLog, checkSeedCalls, check, unknown, passOn}. ``passOn``
 ; is the command line minus --install-to and --old-pid, for a new version to
 ; carry on with.
 ParseArgs(args) {
     opts := {seed: false, record: false, minutes: 10, every: 3, maxMinutes: 0, installTo: "", oldPids: [],
-        selftest: false, selftestLog: "selftest.log", checkSeedCalls: false, unknown: [], passOn: ""}
+        selftest: false, selftestLog: "selftest.log", checkSeedCalls: false, check: false, unknown: [], passOn: ""}
     i := 1
     nextValue(name) {
         if i >= args.Length
@@ -43,6 +43,8 @@ ParseArgs(args) {
                 opts.oldPids.Push(Integer(numeric(arg, take(arg))))
             case "--check-seed-calls":
                 opts.checkSeedCalls := true
+            case "--check":
+                opts.check := true
             case "--selftest":
                 opts.selftest := true
                 if value != ""
@@ -106,6 +108,30 @@ RunSeed(config, passOn, installTo := "", oldPids := "") {
     }
     Logs.Info("Done: " outcome)
     return outcome == Runner.SEEDED || outcome == Runner.ALREADY_SEEDED ? 0 : 1
+}
+
+; What an older version asks of this one before it hands a run over (see
+; Updater.Vet): the start of a seeding run that needs neither the game nor
+; the seeding lock, which is getting the button images. Returns 0 if this
+; version can do that, 1 if it can't. ``load`` gets the images (LoadButtons
+; unless a test passes its own).
+;
+; The images go where a run looks for them, so a version that passes has them
+; ready. The older version's images of the same name are replaced; if this
+; version then fails, the older one gets its own again at the start of its run.
+RunCheck(load := "") {
+    Logs.Info("Start-up check of v" App.VERSION)
+    try {
+        if load
+            load()
+        else
+            LoadButtons()
+    } catch as err {
+        Logs.Error("v" App.VERSION " failed its start-up check: " err.Message)
+        return 1
+    }
+    Logs.Info("v" App.VERSION " passed its start-up check")
+    return 0
 }
 
 ; The button images: downloaded from GitHub into %LOCALAPPDATA% by a built exe

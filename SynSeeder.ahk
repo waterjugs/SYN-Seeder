@@ -10,9 +10,11 @@
 ;                            through the menus yourself, to make button images
 ;                            (--minutes N, --every SECONDS)
 ;   SynSeeder.exe --selftest LOG   checks the parts that don't need the game (CI)
+;   SynSeeder.exe --check    the start of a seeding run, without the game; what
+;                            an older version asks of this one before updating to it
 ;
 ; A release build checks for a newer release before each seeding run and
-; hands the run over to it (see src\Updater.ahk).
+; hands the run over to it once it passes --check (see src\Updater.ahk).
 #Requires AutoHotkey v2.0
 #SingleInstance Off
 #NoTrayIcon
@@ -65,6 +67,18 @@ Main() {
             code := SeedCalls.Check()
         } catch as err {  ; no console in the built exe, and no dialog every minute either
             Logs.Exception("Seed call: the check crashed", err)
+            code := 2
+        }
+        ExitApp(code)
+    }
+    if opts.check {
+        ; Nobody is watching, so nothing here may end in a dialog: the
+        ; version that asked only reads the exit code.
+        try {
+            Logs.Open()
+            code := RunCheck()
+        } catch as err {
+            Logs.Exception("The start-up check crashed", err)
             code := 2
         }
         ExitApp(code)
