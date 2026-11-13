@@ -64,6 +64,7 @@ SynSeeder is an [AutoHotkey](https://www.autohotkey.com/) v2.0.18 script.
 AutoHotkey64.exe SynSeeder.ahk             # the window (--seed seeds now)
 AutoHotkey64.exe SynSeeder.ahk --record    # screenshots, for making button images
 AutoHotkey64.exe SynSeeder.ahk --check-seed-calls   # one Seed when pinged check
+AutoHotkey64.exe SynSeeder.ahk --check     # the start-up check an update must pass
 AutoHotkey64.exe /ErrorStdOut tests\run_tests.ahk
 python tests/make_fixtures.py build/fixtures   # needs opencv-python-headless
 AutoHotkey64.exe /ErrorStdOut tests\vision_cases.ahk build\fixtures

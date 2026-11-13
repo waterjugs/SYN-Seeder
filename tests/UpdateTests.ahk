@@ -42,13 +42,14 @@ ReleasePayload(tag := "v1.2.0", changes := "") {
 }
 
 ; A release build of v1.0.0 installed in App.Dir\bin; records what the updater
-; does. The hand-over is a stand-in unless ``realHandOver``.
+; does. The new version's check of itself and the hand-over are stand-ins
+; (``checks`` and ``starts`` are how they go) unless ``realHandOver``.
 InstalledRelease(realHandOver := false) {
     folder := App.Dir "\bin"
     DirCreate(folder)
     exe := WriteExe(folder "\SynSeeder.exe")
     calls := []
-    state := {calls: calls, starts: true, exe: exe, folder: folder, tag: "v1.2.0"}
+    state := {calls: calls, checks: true, starts: true, exe: exe, folder: folder, tag: "v1.2.0"}
     Patches.Value(App, "VERSION", "1.0.0")
     Patches.Set(Updater, "ReleaseBuild", (*) => true)
     Patches.Set(Updater, "Latest", (*) => (calls.Push("latest"), Updater.ParseRelease(ReleasePayload(state.tag))))
@@ -59,19 +60,29 @@ InstalledRelease(realHandOver := false) {
         return true
     }
     Patches.Set(Updater, "Download", download)
+    vet(this, fresh, tag, clock := "") {
+        SplitPath(fresh, &name)
+        calls.Push("check " name " " tag)
+        return state.checks
+    }
     handOver(this, fresh, exe, tag, args, clock := "") {
         SplitPath(fresh, &name)
         calls.Push("hand over " name " " tag " " args)
         return state.starts
     }
-    if !realHandOver
+    if !realHandOver {
+        Patches.Set(Updater, "Vet", vet)
         Patches.Set(Updater, "HandOver", handOver)
+    }
     return state
 }
 
-; The seeding lock and process starting, as HandOver uses them.
+; The seeding lock and process starting, as Vet and HandOver use them. The
+; new version's check of itself exits with ``checkExits`` once it has been
+; asked ``checkTakes`` times ("": it never exits).
 FakeLock(options := "") {
-    lock := {events: [], checks: 0, polls: 0, takesLockAfter: "", exitsAfter: "", spawnError: "", freeAtEnd: true}
+    lock := {events: [], checks: 0, polls: 0, takesLockAfter: "", exitsAfter: "", spawnError: "", freeAtEnd: true,
+        checkExits: "", checkTakes: 0, asked: 0}
     if IsObject(options)
         for name, value in options.OwnProps()
             lock.%name% := value
@@ -96,7 +107,28 @@ FakeLock(options := "") {
     }
     Patches.Set(SeedLock, "HeldElsewhere", held)
     Patches.Set(SeedLock, "End", (this, pid) => lock.events.Push("end " pid))
+    watch(this, program, arguments) {
+        SplitPath(program, &name)
+        lock.events.Push("watch " name " " arguments)
+        if lock.spawnError
+            throw OSError(lock.spawnError)
+        return {pid: 4243, handle: 0}
+    }
+    Patches.Set(SeedLock, "Watch", watch)
+    exited() => lock.checkExits != "" && lock.asked > lock.checkTakes
+    code(this, watched) {
+        lock.asked++
+        return exited() ? lock.checkExits : ""
+    }
+    Patches.Set(SeedLock, "ExitCode", code)
+    Patches.Set(SeedLock, "Forget", (this, watched) => lock.events.Push(exited() ? "forget " watched.pid : "end " watched.pid))
     return lock
+}
+
+; The new version's check of itself, with the stand-in exe downloaded.
+VetWith(lock, clock := "") {
+    fresh := WriteExe(App.Dir "\" Updater.UPDATE_NAME)
+    return {passed: Updater.Vet(fresh, "v1.2.0", clock ? clock : FakeClock()), fresh: fresh}
 }
 
 HandOverWith(lock, clock := "") {
@@ -227,7 +259,8 @@ class UpdateTests {
     static Test_a_newer_release_takes_over() {
         state := InstalledRelease()
         Assert(Updater.UpdateAndHandOver(SeederConfig(), "--seed", state.exe))
-        AssertEq(state.calls, ["latest", "download v1.2.0 SynSeeder-update.exe", "hand over SynSeeder-update.exe v1.2.0 --seed"])
+        AssertEq(state.calls, ["latest", "download v1.2.0 SynSeeder-update.exe", "check SynSeeder-update.exe v1.2.0",
+            "hand over SynSeeder-update.exe v1.2.0 --seed"])
     }
 
     static Test_same_or_older_release_does_nothing() {
@@ -252,7 +285,7 @@ class UpdateTests {
         state := InstalledRelease()
         WriteExe(state.folder "\" Updater.UPDATE_NAME)
         Assert(Updater.UpdateAndHandOver(SeederConfig(), "--seed", state.exe))
-        AssertEq(state.calls, ["latest", "hand over SynSeeder-update.exe v1.2.0 --seed"])
+        AssertEq(state.calls, ["latest", "check SynSeeder-update.exe v1.2.0", "hand over SynSeeder-update.exe v1.2.0 --seed"])
     }
 
     static Test_a_release_that_keeps_failing_to_start_is_skipped() {
@@ -269,6 +302,28 @@ class UpdateTests {
         Assert(!Updater.UpdateAndHandOver(SeederConfig(), "--seed", state.exe))
         Assert(InStr(state.calls[state.calls.Length], "hand over") = 1)
         AssertEq(Updater.Failures("v1.2.1"), 1)
+    }
+
+    static Test_a_release_that_fails_its_check_isnt_given_the_run() {
+        state := InstalledRelease()
+        state.checks := false
+        Assert(!Updater.UpdateAndHandOver(SeederConfig(), "--seed", state.exe))
+        AssertEq(state.calls, ["latest", "download v1.2.0 SynSeeder-update.exe", "check SynSeeder-update.exe v1.2.0"])
+        AssertEq(Updater.Failures("v1.2.0"), 1)
+        ; Like one that fails to start, it's skipped after MAX_FAILURES tries.
+        loop Updater.MAX_FAILURES - 1
+            Assert(!Updater.UpdateAndHandOver(SeederConfig(), "--seed", state.exe))
+        state.calls.Length := 0
+        Assert(!Updater.UpdateAndHandOver(SeederConfig(), "--seed", state.exe))
+        AssertEq(state.calls, ["latest"])
+    }
+
+    static Test_a_stopped_check_isnt_a_failed_release() {
+        state := InstalledRelease()
+        state.checks := Updater.STOPPED
+        Assert(!Updater.UpdateAndHandOver(SeederConfig(), "--seed", state.exe))
+        AssertEq(state.calls[state.calls.Length], "check SynSeeder-update.exe v1.2.0")  ; no hand-over
+        AssertEq(Updater.Failures("v1.2.0"), 0)
     }
 
     static Test_switched_off_in_settings() {
@@ -289,6 +344,60 @@ class UpdateTests {
     static Test_running_as_a_script_is_not_a_release_build() {
         Assert(!Updater.ReleaseBuild())
         Assert(!Build.RELEASE)  ; CI sets it only for a release
+    }
+
+    ; The new version's check of itself; the seeding lock stays with this run throughout
+
+    static Test_check_passes_a_new_version_that_exits_with_0() {
+        lock := FakeLock({checkExits: 0, checkTakes: 3})
+        result := VetWith(lock)
+        AssertEq(result.passed, true)
+        AssertEq(lock.events, ["watch SynSeeder-update.exe --check", "forget 4243"])
+        Assert(FileExist(result.fresh))  ; the hand-over starts it next
+    }
+
+    static Test_check_fails_a_new_version_that_exits_with_anything_else() {
+        for code in [1, 2, 0xC0000005] {  ; it said no, it crashed, Windows ended it
+            lock := FakeLock({checkExits: code})
+            result := VetWith(lock)
+            AssertEq(result.passed, false, "exit code " code)
+            AssertEq(lock.events, ["watch SynSeeder-update.exe --check", "forget 4243"])
+            Assert(!FileExist(result.fresh))
+        }
+    }
+
+    static Test_check_gives_up_on_a_new_version_that_hangs() {
+        lock := FakeLock()  ; never exits
+        clock := FakeClock()
+        result := VetWith(lock, clock)
+        AssertEq(result.passed, false)
+        Assert(clock.at >= Updater.CHECK_SECONDS)
+        AssertEq(lock.events, ["watch SynSeeder-update.exe --check", "end 4243"])
+        Assert(!FileExist(result.fresh))
+    }
+
+    static Test_check_fails_a_new_version_that_cant_start() {
+        lock := FakeLock({spawnError: "blocked by antivirus"})
+        result := VetWith(lock)
+        AssertEq(result.passed, false)
+        AssertEq(lock.events, ["watch SynSeeder-update.exe --check"])
+        Assert(!FileExist(result.fresh))
+    }
+
+    static Test_check_starts_nothing_when_asked_to_stop_first() {
+        lock := FakeLock({checkExits: 0})
+        result := VetWith(lock, StoppingClock(0))
+        AssertEq(result.passed, Updater.STOPPED)
+        AssertEq(lock.events, [])
+        Assert(FileExist(result.fresh))
+    }
+
+    static Test_check_is_ended_when_asked_to_stop() {
+        lock := FakeLock()  ; never exits
+        result := VetWith(lock, StoppingClock(3))
+        AssertEq(result.passed, Updater.STOPPED)
+        AssertEq(lock.events, ["watch SynSeeder-update.exe --check", "end 4243"])
+        Assert(FileExist(result.fresh))  ; still good for the next run
     }
 
     ; Handing the run over to the new version

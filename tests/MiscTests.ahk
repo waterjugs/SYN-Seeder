@@ -247,6 +247,31 @@ class MiscTests {
         Assert(opts.selftest)
         AssertEq(opts.selftestLog, "out.log")
         AssertEq(opts.unknown, ["--what"])
+        opts := ParseArgs(["--check"])
+        Assert(opts.check && !opts.checkSeedCalls && !opts.seed)
+        AssertEq(opts.unknown, [])
+        Assert(!ParseArgs([]).check && !ParseArgs(["--check-seed-calls"]).check)
+    }
+
+    ; What a new version is asked before a run is handed to it
+
+    static Test_start_up_check_says_whether_this_version_can_start_a_run() {
+        Logs.capture := []
+        AssertEq(RunCheck(() => Map()), 0)
+        AssertEq(RunCheck(() => Fail("Missing button images: server_row")), 1)
+        Assert(InStr(Logs.capture[Logs.capture.Length], "Missing button images: server_row"))
+    }
+
+    static Test_start_up_check_gets_the_button_images_as_a_run_does() {
+        Patches.Value(App, "Built", true)
+        Patches.Set(Look, "GetFonts", (*) => "")
+        fetched := 0
+        Patches.Set(Buttons, "Fetch", (*) => (fetched++, []))
+        Patches.Value(Buttons, "Folder", A_ScriptDir "\..\templates")
+        AssertEq(RunCheck(), 0)
+        AssertEq(fetched, 1)
+        Patches.Value(Buttons, "Folder", App.Dir "\none")  ; GitHub didn't give them
+        AssertEq(RunCheck(), 1)
     }
 
     static Test_command_line_needs_values() {
@@ -499,5 +524,35 @@ class MiscTests {
         }
         Assert(!SeedLock.HeldElsewhere())
         AssertEq(SeedLock.Runs(), [])
+    }
+
+    ; A real program, started as the updater starts a new version's check:
+    ; AutoHotkey running a script that exits with ``code``, or keeps running.
+    static _Watched(code := "") {
+        script := App.Dir "\watched.ahk"
+        out := FileOpen(script, "w", "UTF-8"), out.Write("#NoTrayIcon`n" (code = "" ? "Persistent()" : "ExitApp(" code ")")), out.Close()
+        return SeedLock.Watch(A_AhkPath, QuoteArg(script))
+    }
+
+    static Test_a_watched_programs_exit_code_is_read() {
+        for want in [0, 1] {
+            watched := MiscTests._Watched(want)
+            try {
+                deadline := A_TickCount + 30000
+                while (code := SeedLock.ExitCode(watched)) == "" && A_TickCount < deadline
+                    Sleep(50)
+                AssertEq(code, want)
+            } finally {
+                SeedLock.Forget(watched)
+            }
+        }
+    }
+
+    static Test_a_watched_program_still_running_is_ended() {
+        watched := MiscTests._Watched()
+        Sleep(500)
+        AssertEq(SeedLock.ExitCode(watched), "")
+        SeedLock.Forget(watched)
+        Assert(ProcessWaitClose(watched.pid, 10) = 0, "it's still running")
     }
 }
