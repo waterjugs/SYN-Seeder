@@ -5,9 +5,15 @@ name: Security Review
 # fails if the review couldn't run or found something, so a green tick means
 # this exact commit was reviewed and nothing was found.
 #
+# The review is Anthropic's claude-code-security-review. Its scripts are run
+# here directly, not through its action: the action installs Claude Code with
+# Node 18, for which npm picks the old 2.1.197, a release the newer models
+# refuse, and nothing set from a workflow changes that. Here Claude Code is
+# installed with a current Node, so it's the current release.
+#
 # Needs an Anthropic API key in the CLAUDE_API_KEY secret. Pull requests from
 # forks and from Dependabot don't get secrets, so they're skipped. That also
-# keeps the review to people who can push here: the action isn't hardened
+# keeps the review to people who can push here: the reviewer isn't hardened
 # against text in a pull request that tries to steer Claude.
 
 on:
@@ -29,40 +35,112 @@ concurrency:
   group: security-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # The reviewer at one commit (its main on 2026-02-11), not whatever is
+  # newest: its scripts are given the API key and may write to pull requests.
+  REVIEWER_COMMIT: 0c6a49f1fa56a1d472575da86a94dbc1edb78eda
+  # The newest Opus. It needs a current Claude Code, which is why the
+  # reviewer's own action can't use it.
+  REVIEW_MODEL: claude-opus-5-5
+
 jobs:
   security:
     if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - name: Get the pull request
+        uses: actions/checkout@v4
         with:
-          # The pull request's own commit, so line numbers match its diff.
+          # Its own commit, so line numbers match its diff.
           ref: ${{ github.event.pull_request.head.sha }}
+          path: pr
           # Claude reads this folder, so the job's token isn't left in it.
           persist-credentials: false
 
-      # Pinned to a commit (main on 2026-02-11): the action is given the API
-      # key and may write to pull requests.
-      - uses: anthropics/claude-code-security-review@0c6a49f1fa56a1d472575da86a94dbc1edb78eda
+      - name: Get the reviewer
+        uses: actions/checkout@v4
         with:
-          claude-api-key: ${{ secrets.CLAUDE_API_KEY }}
-          # The action's own default model has been retired, and the newest
-          # ones are out of reach: the action installs Claude Code with Node
-          # 18, for which npm picks the old 2.1.197, and that release is
-          # refused by every model that came out after it.
-          claude-model: claude-opus-4-8
-          # Review every push. Left off, only the first push to a pull request
-          # is reviewed, and a first try that fails is never repeated.
-          run-every-commit: true
+          repository: anthropics/claude-code-security-review
+          ref: ${{ env.REVIEWER_COMMIT }}
+          path: reviewer
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install Claude Code and what the reviewer needs
+        run: |
+          npm install --global --no-fund --no-audit @anthropic-ai/claude-code
+          echo "Claude Code $(claude --version)"
+          python -m pip install --disable-pip-version-check --quiet -r reviewer/claudecode/requirements.txt
+          # Before it weeds out false alarms, the reviewer tries the API key
+          # on a model that has since been retired, and when that fails it
+          # leaves the weeding out. Point that one try at a current model. If
+          # the line isn't there (a different REVIEWER_COMMIT), stop and say so.
+          client=reviewer/claudecode/claude_api_client.py
+          if ! grep -q 'model="claude-3-5-haiku-20241022"' "$client"; then
+            echo "::error::The reviewer no longer tries the API key on claude-3-5-haiku-20241022; this step needs looking at"
+            exit 1
+          fi
+          sed -i 's/model="claude-3-5-haiku-20241022"/model="claude-haiku-5-5"/' "$client"
+
+      - name: Review the pull request
+        working-directory: reviewer
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          CLAUDE_MODEL: ${{ env.REVIEW_MODEL }}
+          ENABLE_CLAUDE_FILTERING: 'true'
+          REPO_PATH: ${{ github.workspace }}/pr
+          PYTHONPATH: ${{ github.workspace }}/reviewer
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::error::The CLAUDE_API_KEY secret isn't set, so nothing can be reviewed"
+            exit 1
+          fi
+          # The reviewer writes what it found to standard output and how it
+          # went to standard error. It exits with 1 for a finding as well as
+          # for a failure, so the last step reads the result, not that.
+          python -u claudecode/github_action_audit.py \
+            > "$GITHUB_WORKSPACE/claudecode-results.json" 2> "$GITHUB_WORKSPACE/claudecode-error.log" || true
+          # Shown indented, so nothing in them can pass for a workflow command.
+          echo "How it went:"
+          tail -n 60 "$GITHUB_WORKSPACE/claudecode-error.log" | sed 's/^/    /'
+          echo "What it found:"
+          head -c 20000 "$GITHUB_WORKSPACE/claudecode-results.json" | sed 's/^/    /'
+
+      - name: Comment on the lines it flagged
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          # The reviewer's script reads findings.json in the folder it's run from.
+          jq '.findings // []' claudecode-results.json > findings.json 2> /dev/null || echo '[]' > findings.json
+          node reviewer/scripts/comment-pr-findings.js
+
+      - name: Keep the result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-review-results
+          path: |
+            claudecode-results.json
+            claudecode-error.log
+          retention-days: 7
+          if-no-files-found: ignore
 
       - name: Fail if the review didn't finish or found something
-        # The action itself passes either way: it only warns when the review
-        # fails, and only comments when it finds something.
+        # The reviewer only says what it found; whether that's a pass is decided here.
         run: |
           results=claudecode-results.json
           if [ ! -s "$results" ] || ! jq -e 'type == "object"' "$results" > /dev/null 2>&1; then
-            echo "::error::The security review left no result, so this pull request wasn't reviewed. The step above says why."
+            echo "::error::The security review left no result, so this pull request wasn't reviewed. The review step says why."
             exit 1
           fi
           error=$(jq -r '.error // empty | tostring | split("\n")[0] | .[0:300]' "$results")
@@ -71,12 +149,12 @@ jobs:
             exit 1
           fi
           if jq -e '.analysis_summary.review_completed == false' "$results" > /dev/null 2>&1; then
-            echo "::error::Claude didn't finish the security review, so this pull request wasn't reviewed. The step above says why."
+            echo "::error::Claude didn't finish the security review, so this pull request wasn't reviewed. The review step says why."
             exit 1
           fi
           count=$(jq '[.findings[]?] | length' "$results")
           if [ "$count" -gt 0 ]; then
-            # Listed here too: the action comments only once per pull request.
+            # Listed here too: the reviewer comments only once per pull request.
             jq -r '.findings[]? | "- \(.severity // "?") \(.file // "?"):\(.line // "?") \(.description // "" | tostring | gsub("[\r\n]+"; " "))"' "$results"
             echo "::error::The security review found $count possible problem(s): listed above, and in the pull request's comments or the security-review-results file."
             exit 1
