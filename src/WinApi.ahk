@@ -36,9 +36,14 @@ class WinApi {
         return DllCall("GetLastInputInfo", "Ptr", info) ? NumGet(info, 4, "UInt") : ""
     }
 
-    static _MarkOwnInput() {
+    ; ``switched``: the game lost the front since the key or button went down,
+    ; so someone switched away and the latest input is theirs, even if it came
+    ; within OWN_INPUT_SLACK_MS of ours (an Alt+Tab during a strafe). If a
+    ; popup took the front instead, this counts ours as theirs, which only
+    ; makes the PC look busy for longer.
+    static _MarkOwnInput(switched := false) {
         last := WinApi._LastInput()
-        if last != "" && !WinApi._Ours(last, WinApi.ownInputTick)
+        if last != "" && (switched || !WinApi._Ours(last, WinApi.ownInputTick))
             WinApi.playerInputTick := last
         WinApi.ownInputTick := DllCall("GetTickCount", "UInt")
     }
@@ -48,12 +53,13 @@ class WinApi {
     static _OnTarget() => !WinApi.inputTarget || DllCall("GetForegroundWindow", "Ptr") = WinApi.inputTarget
 
     ; Sends INPUT structs. ``always`` sends even when the game isn't in front:
-    ; for releasing keys and buttons (harmless in any window, and they mustn't
-    ; stay held down) and for ForceToFront's nudges.
+    ; "release" for releasing keys and buttons (harmless in any window, and
+    ; they mustn't stay held down), true for ForceToFront's nudges.
     static _Send(inputs, always := false) {
-        if !always && !WinApi._OnTarget()
+        onTarget := WinApi._OnTarget()
+        if !always && !onTarget
             return
-        WinApi._MarkOwnInput()
+        WinApi._MarkOwnInput(always = "release" && !onTarget)
         size := WinApi.INPUT_SIZE
         data := Buffer(size * inputs.Length, 0)
         for item in inputs {
@@ -110,14 +116,30 @@ class WinApi {
 
     static InFront(hwnd) => DllCall("GetForegroundWindow", "Ptr") = hwnd
 
+    static IsMinimised(hwnd) => DllCall("IsIconic", "Ptr", hwnd)
+
+    ; The window in front, or 0 when there's none.
+    static ForegroundWindow() => DllCall("GetForegroundWindow", "Ptr")
+
+    ; The name of the program running as ``pid``, or "" if it has gone.
+    static ProcessName(pid) {
+        try
+            return ProcessGetName(pid)
+        catch
+            return ""
+    }
+
+    static OwnPid() => DllCall("GetCurrentProcessId", "UInt")
+
     static ForegroundPid() {
         hwnd := DllCall("GetForegroundWindow", "Ptr")
         return hwnd ? WinApi.WindowPid(hwnd) : 0
     }
 
     ; Asks Windows to make hwnd the foreground window. True once it is, and
-    ; isn't minimised. Windows refuses while someone is using another window,
-    ; which is what we want then (a minimised game stays minimised too);
+    ; isn't minimised. Windows usually refuses while someone is using another
+    ; window, but not always (after its foreground lock timeout, for one), so
+    ; HllGame.Focus only asks while no other program's window is in front;
     ; ForceToFront is for when the PC has been left alone.
     static BringToFront(hwnd) {
         if DllCall("GetForegroundWindow", "Ptr") != hwnd {
@@ -184,7 +206,10 @@ class WinApi {
     static IdleMs(now, lastInput, ownInput, playerInput) {
         if WinApi._Ours(lastInput, ownInput)  ; the latest input was ours; the player's came before it
             lastInput := playerInput != "" ? playerInput : ownInput
-        return (now - lastInput) & 0xFFFFFFFF
+        idle := (now - lastInput) & 0xFFFFFFFF
+        ; Another program's SendInput can stamp input with its own time, even
+        ; one a little ahead of now: that's input just now, not 49 days ago.
+        return idle >= 0x80000000 ? 0 : idle
     }
 
     ; Flashes the window's taskbar button until it comes to the front.
@@ -213,7 +238,7 @@ class WinApi {
         Sleep(100)
         WinApi._Send([WinApi._Mouse(0x2)])  ; left down
         Sleep(50)
-        WinApi._Send([WinApi._Mouse(0x4)], true)  ; left up
+        WinApi._Send([WinApi._Mouse(0x4)], "release")  ; left up
     }
 
     static MoveCursor(x, y) {
@@ -246,7 +271,7 @@ class WinApi {
     }
 
     static KeyDown(key) => WinApi._Send([WinApi._Key(WinApi._Scancode(key), 0, 0x8)])  ; KEYEVENTF_SCANCODE
-    static KeyUp(key) => WinApi._Send([WinApi._Key(WinApi._Scancode(key), 0, 0x8 | 0x2)], true)
+    static KeyUp(key) => WinApi._Send([WinApi._Key(WinApi._Scancode(key), 0, 0x8 | 0x2)], "release")
 
     static Press(key) {
         WinApi.KeyDown(key)

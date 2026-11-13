@@ -10,7 +10,13 @@ class HllGame {
     static EPIC_APP_NAME := "d7361b7d6fa94097bcadeac4b1f785fb"  ; HLL Vietnam's AppName in the Epic store (2026-10-29)
     ; Seconds without mouse or keyboard use before the seeder pulls the game in
     ; front of whatever someone was doing; until then it waits for them.
-    static IDLE_BEFORE_TAKEOVER := 15
+    ; Someone reading or watching a video can leave both alone for a while, so
+    ; this is long (before version 1.1.0 it was 15 s, which cut in on them).
+    static IDLE_BEFORE_TAKEOVER := 300
+    ; Seconds without mouse or keyboard use before the seeder takes the front
+    ; when no other program's window has it, or carries on after the game came
+    ; back to the front during a wait (see Focus).
+    static SETTLE_SECONDS := 10
     ; Seconds to keep watching for a game the launcher starts late, to close it.
     static LATE_START_SECONDS := 90
 
@@ -23,6 +29,9 @@ class HllGame {
         this.lateClock := lateClock ? lateClock : SeedClock()
         this.focusWait := ""     ; why the game isn't in front, once logged
         this.altTapped := false  ; ForceToFront's Alt tap, used once per wait
+        this.switching := ""     ; how a switch to the game that's still restoring was made, for the log
+        this.cameBack := false   ; the game came back to the front by itself during a wait, and the log said so
+        this.hadFront := false   ; the game has been in front in this run
         ; True from a launch that timed out until the next one: the launcher
         ; can still start the game (see Runner.Seed).
         this.launchPending := false
@@ -181,45 +190,131 @@ class HllGame {
     ; Brings the game to the front. True if it is the foreground window, so
     ; keys and clicks will land in it.
     ;
-    ; If someone is using another window, it waits for them: once the mouse
-    ; and keyboard have been idle for IDLE_BEFORE_TAKEOVER seconds it takes
-    ; the game to the front itself. Meanwhile the game's taskbar button
-    ; flashes to show it's waiting.
+    ; If another program's window is in front, someone may be using it, so it
+    ; waits for them: once the mouse and keyboard have been idle for
+    ; IDLE_BEFORE_TAKEOVER seconds it takes the game to the front itself.
+    ; Meanwhile the game's taskbar button flashes to show it's waiting. It
+    ; doesn't even ask Windows to switch before then, because Windows doesn't
+    ; always say no while someone uses another window: once the mouse and
+    ; keyboard have been idle for its foreground lock timeout (200 s by
+    ; default, less on some PCs) it lets any program take the front.
+    ;
+    ; When no other program's window is in front (nothing is, another of the
+    ; game's, or SynSeeder's own until the game has been in front once, as
+    ; after Seed now), it takes the front once the mouse and keyboard have
+    ; been still for SETTLE_SECONDS. The same goes for a game someone
+    ; minimised that's still the window in front (Windows had nothing else to
+    ; switch to). And when the game comes back to the front during a wait
+    ; without SynSeeder (the player clicked it, or Windows switched to it
+    ; because they minimised or closed their window), it sends nothing until
+    ; they've been still that long too.
     Focus() {
         hwnd := this.Window()
         if !hwnd
             return false
         WinApi.SetInputTarget(hwnd)  ; input is dropped whenever this isn't in front
-        if WinApi.BringToFront(hwnd) {
+        front := WinApi.ForegroundWindow()
+        idle := WinApi.UserIdleSeconds()
+        minimised := front = hwnd && this.switching = "" && WinApi.IsMinimised(hwnd)  ; by someone, not SynSeeder
+        if front = hwnd && !minimised {
+            if this.switching = "" && this.focusWait != "" {  ; any wait, a refused takeover too (as before an unlock)
+                if !this.cameBack
+                    Logs.Info("The game is in front again, but not because of SynSeeder: you switched to it, "
+                        . "or Windows or the game did (mouse and keyboard last used " Round(idle) "s ago)")
+                this.cameBack := true
+                if idle < HllGame.SETTLE_SECONDS
+                    return false  ; someone is at the PC: don't click or type under their hands
+            }
+            if !WinApi.BringToFront(hwnd)
+                return false  ; in front, but still restoring from minimised: ready on the next try
+            if this.switching != ""
+                Logs.Info("Brought the game to the front (" this.switching ")")
             this._InFront()
             return true
         }
-        idle := WinApi.UserIdleSeconds()
-        if idle >= HllGame.IDLE_BEFORE_TAKEOVER {
+        this.switching := "", this.cameBack := false  ; not in front (any more)
+        free := minimised || HllGame.FrontIsFree(front, hwnd, !this.hadFront)
+        need := free ? HllGame.SETTLE_SECONDS : HllGame.IDLE_BEFORE_TAKEOVER
+        if idle >= need {
+            how := (free ? HllGame._FreeFront(front, hwnd) "; " : "") "mouse and keyboard idle for " HllGame.Span(idle)
             if WinApi.ForceToFront(hwnd, !this.altTapped) {
-                Logs.Info("Brought the game to the front (mouse and keyboard idle for " Round(idle) "s)")
+                Logs.Info("Brought the game to the front (" how ")")
                 this._InFront()
                 return true
             }
-            if WinApi.InFront(hwnd)
-                return false  ; ours, but still restoring from minimised: ready on the next try
+            if WinApi.InFront(hwnd) {
+                this.switching := how  ; ours, but still restoring from minimised: ready on the next try
+                return false
+            }
             this.altTapped := true
             wait := "refused"
         } else {
-            wait := "in use"
+            wait := free ? "busy" : "in use"
         }
         if wait != this.focusWait {
-            if wait = "in use" {
-                Logs.Warning("Another window is in front and the PC is in use; waiting until the mouse "
-                    . "and keyboard have been idle for " HllGame.IDLE_BEFORE_TAKEOVER "s")
-                WinApi.Flash(hwnd)
-            } else {
+            if wait = "refused" {
                 Logs.Warning("Couldn't bring the game to the front (" HllGame.ForegroundApp() " has it); "
                     . "holding input until it is")
+            } else {
+                if free
+                    why := "The PC is in use"
+                else if !front
+                    why := "The PC is locked, or a Windows prompt is up"
+                else {
+                    name := HllGame._FrontName(front)
+                    why := "Another program's window is in front" (name != "" ? " (" name ")" : "") " and the PC is in use"
+                }
+                Logs.Warning(why "; waiting until the mouse and keyboard have been idle for " HllGame.Span(need))
+                WinApi.Flash(hwnd)
             }
             this.focusWait := wait
         }
         return false
+    }
+
+    ; True if the game can come to the front without taking it from another
+    ; program: no window is in front (``front`` is 0) and the PC isn't locked,
+    ; or one of the game's own windows is, or with ``ownToo`` one of
+    ; SynSeeder's (its window, after Seed now). Another program's window may
+    ; be in use.
+    static FrontIsFree(front, game, ownToo := true) {
+        if front = game
+            return true
+        if !front  ; also while the PC is locked or a UAC prompt is up
+            return WinApi.DesktopUnlocked()
+        pid := WinApi.WindowPid(front)
+        if !pid
+            return false
+        if pid = WinApi.WindowPid(game)
+            return true
+        if !ownToo
+            return false
+        name := WinApi.ProcessName(pid)  ; SynSeeder.exe, or "SynSeeder (1).exe" if downloaded twice
+        return name != "" && (name = WinApi.ProcessName(WinApi.OwnPid()) || name ~= "i)^SynSeeder\b.*\.exe$")
+    }
+
+    ; What was in front when FrontIsFree said yes, for the log.
+    static _FreeFront(front, game) {
+        if !front
+            return "no window was in front"
+        if front = game
+            return "the game was minimised"
+        return WinApi.WindowPid(front) = WinApi.WindowPid(game) ? "another of its windows was in front"
+            : "SynSeeder's window was in front"
+    }
+
+    ; The program whose window ``front`` is, for the log, or "".
+    static _FrontName(front) {
+        pid := front ? WinApi.WindowPid(front) : 0
+        return pid ? WinApi.ProcessName(pid) : ""
+    }
+
+    ; ``seconds`` for the log: "10 s", "5 min", "5 min 12 s".
+    static Span(seconds) {
+        seconds := Round(seconds)
+        if seconds < 60
+            return seconds " s"
+        return Mod(seconds, 60) ? MinutesText(seconds) : seconds // 60 " min"
     }
 
     ; Name of the program whose window is in front, for the log.
@@ -236,10 +331,13 @@ class HllGame {
     _InFront() {
         this.focusWait := ""
         this.altTapped := false
+        this.switching := ""
+        this.cameBack := false
+        this.hadFront := true
     }
 
     ; True while Focus is holding off because someone is using the PC.
-    WaitingForUser() => this.focusWait = "in use"
+    WaitingForUser() => this.focusWait = "in use" || this.focusWait = "busy"
 
     ; Ends the game. With ``linger``, keeps watching that long for a late
     ; start (Steam can take minutes to launch after an update). A stop
