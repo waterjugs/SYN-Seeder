@@ -298,3 +298,13 @@ jobs:
           name: vt-results
           path: vt-results.json
           if-no-files-found: ignore
+
+      - name: Check that the draft's exe was scanned
+        # Without VT_API_KEY the scan passes without scanning anything, so a
+        # tag says so here instead of looking green.
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          if [ ! -f vt-results.json ]; then
+            echo "::error::Nothing was scanned (no VT_API_KEY?), so don't publish this draft yet"
+            exit 1
+          fi

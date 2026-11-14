@@ -15,8 +15,8 @@ Write each bullet on one line: the release page shows every line break.
 - **New: Seed when pinged.** When a Syngineer calls a seed with **/seed** on Discord, your PC can join in. It's off unless you tick it, and it only joins during the hours you pick, at most 3 times a day. If you're using the PC, it asks first.
 - **The game no longer jumps in front of what you're doing.** It waits until nobody has used the PC for 5 minutes.
 - **Safer updates from now on.** Before a new version takes over a run, it checks itself. If the check fails, your PC keeps the version it has.
-- **Small fixes.** A mistake in the settings file can't break your runs, a slow stats page can't hold up **Ctrl+Alt+End**, and if saving fails when you press **Seed now**, the red message stays on screen.
-- **Using Seed when pinged?** Delete your old SynSeeder.exe and open this new one. Pressing **Save** in an older copy turns Seed when pinged off.
+- **Small fixes.** **Ctrl+Alt+End** no longer has to wait when the server's player count is slow to load, and if saving fails when you press **Seed now**, the red message stays on screen.
+- **Using Seed when pinged?** Delete your old SynSeeder.exe and open this new one. Pressing **Save** or **Seed now** in an older copy turns Seed when pinged off.
 
 ## 1.0.2
 
