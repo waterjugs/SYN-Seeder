@@ -82,6 +82,7 @@ jobs:
             exit 1
           fi
           echo "SynSeeder $version"
+          echo "SYNSEEDER_VERSION=$version" >> "$GITHUB_ENV"
 
       - name: Check that run_ahk.ps1 passes arguments whole
         shell: pwsh
@@ -107,6 +108,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+
+      - name: Check the release notes
+        shell: bash
+        run: |
+          # A release's notes are its version's part of CHANGELOG.md, so the
+          # version has to have one before it's tagged.
+          python tests/test_release_notes.py
+          python tools/release_notes.py check "$SYNSEEDER_VERSION"
 
       - name: Check the button finder on screenshots
         shell: pwsh
@@ -194,6 +203,10 @@ jobs:
     permissions:
       contents: write  # to make the draft release
     steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false  # for CHANGELOG.md; the step that uses the token is given it
+
       - uses: actions/download-artifact@v4
         with:
           name: SynSeeder
@@ -208,12 +221,10 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           sha=$(sha256sum dist/SynSeeder.exe | cut -d' ' -f1)
-          docs="https://github.com/$GITHUB_REPOSITORY/blob/$GITHUB_REF_NAME"
-          notes="Download SynSeeder.exe below and double-click it. The [README]($docs/README.md) says how to set it up.
-
-          SHA-256 of SynSeeder.exe: \`$sha\`
-
-          By using SynSeeder you agree to its [Terms of Service]($docs/TERMS.md). The [Privacy Policy]($docs/PRIVACY.md) explains what it stores and sends."
+          # What's new in this version (its part of CHANGELOG.md), a link to
+          # the README and the exe's SHA-256.
+          notes=$(python3 tools/release_notes.py notes "$GITHUB_REF_NAME" "$sha") || exit 1
+          echo "$notes"
           # A run started again finds the draft its first try made. That draft
           # gets this build's exe and notes, rather than a second draft being
           # made for the same tag. A published release is never changed.
@@ -243,7 +254,10 @@ jobs:
 
   scan:
     # After the release job on a tag. On main and in runs started by hand
-    # that job is skipped, which mustn't skip this one with it.
+    # that job is skipped, which mustn't skip this one with it. The result
+    # stays in this run (its summary, log and vt-results); the release notes
+    # don't show it. Any flag fails the job, so a draft whose scan isn't
+    # green mustn't be published.
     needs: [build, release]
     if: >-
       ${{ !cancelled() && needs.build.result == 'success'
@@ -252,7 +266,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
-      contents: write  # on a tag: to read the draft release and add the result to it
+      contents: write  # on a tag: to see the draft release and download its exe
     steps:
       - uses: actions/checkout@v4
         with:
@@ -285,27 +299,12 @@ jobs:
           path: vt-results.json
           if-no-files-found: ignore
 
-      - name: Add the result to the draft release
-        # Only reached when no engine flagged it.
+      - name: Check that the draft's exe was scanned
+        # Without VT_API_KEY the scan passes without scanning anything, so a
+        # tag says so here instead of looking green.
         if: startsWith(github.ref, 'refs/tags/v')
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           if [ ! -f vt-results.json ]; then
-            echo "::warning::Nothing was scanned (no VT_API_KEY?), so the draft release is left as it is"
-            exit 0
+            echo "::error::Nothing was scanned (no VT_API_KEY?), so don't publish this draft yet"
+            exit 1
           fi
-          line=$(python3 - <<'EOF'
-          import json
-          report = json.load(open("vt-results.json"))[0]
-          engines = sum(report["stats"].get(k, 0) for k in ("malicious", "suspicious", "undetected", "harmless"))
-          link = "https://www.virustotal.com/gui/file/" + report["sha256"]
-          print("VirusTotal: %d of %d antivirus engines flagged this exact file ([report](%s), %s)."
-                % (len(report["flagged"]), engines, link, report["scanned"]))
-          EOF
-          )
-          body=$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json body --jq .body)
-          gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --notes "$body
-
-          $line"
-          echo "$line"
