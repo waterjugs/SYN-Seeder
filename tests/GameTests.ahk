@@ -9,7 +9,7 @@
 ; ``minimised`` the game minimised (by someone, unless SynSeeder is restoring it).
 FakeWinApi() {
     api := {polite: false, forced: true, idle: 0.0, calls: [], target: "", frontPid: 0, restoring: false, unlocked: true,
-        minimised: false,
+        minimised: false, watching: false,
         front: 5678, pids: Map(1234, 100, 4321, 100, 5678, 200, 7777, 300, 7778, 301, 7779, 302),
         names: Map(100, "HLLVietnam-Win64-Shipping.exe", 200, "chrome.exe", 300, "SynSeeder.exe",
             301, "SynSeeder (1).exe", 302, "SynSeederish.exe", 400, "SynSeeder.exe")}
@@ -26,6 +26,7 @@ FakeWinApi() {
     Patches.Set(WinApi, "ForceToFront", (this, hwnd, altTap := true) => (api.calls.Push(altTap ? "force+alt" : "force"), api.forced))
     Patches.Set(WinApi, "UserIdleSeconds", (*) => api.idle)
     Patches.Set(WinApi, "Flash", (this, hwnd) => api.calls.Push("flash"))
+    Patches.Set(WinApi, "WatchInput", (this, on) => api.watching := on)
     return api
 }
 
@@ -523,6 +524,82 @@ class GameTests {
         Patches.Value(WinApi, "ownInputTick", 20000)
         WinApi._Send([], "release")  ; the key-up goes out with the game no longer in front: theirs
         AssertEq(WinApi.playerInputTick, 20100)
+    }
+
+    static Test_a_programs_empty_mouse_signal_doesnt_count_as_input() {
+        ; The game's signal at 350 s; the player last typed at 50 s.
+        AssertEq(WinApi.IdleMs(400000, 350000, "", 50000, 350000), 350000)
+        AssertEq(WinApi.IdleMs(400000, 350000, "", "", 350000), 50000)       ; never saw theirs: count it
+        AssertEq(WinApi.IdleMs(400000, 360000, "", 50000, 350000), 40000)    ; they moved the mouse after it
+        AssertEq(WinApi.IdleMs(400000, 350000, "", 50000, ""), 50000)        ; not watching: it counts
+        AssertEq(WinApi.IdleMs(400000, 350100, 350000, 50000, 350100), 350000)  ; ours and empty
+    }
+
+    static Test_only_a_programs_mouse_signal_that_does_nothing_is_empty() {
+        raw(type := 0, device := 0, flags := 0, buttons := 0, x := 0, y := 0) {
+            buf := Buffer(8 + 2 * A_PtrSize + 24, 0)
+            mouse := 8 + 2 * A_PtrSize
+            NumPut("UInt", type, buf, 0), NumPut("Ptr", device, buf, 8)
+            NumPut("UShort", flags, buf, mouse), NumPut("UShort", buttons, buf, mouse + 4)
+            NumPut("Int", x, buf, mouse + 12), NumPut("Int", y, buf, mouse + 16)
+            return buf
+        }
+        Assert(WinApi.EmptyMouse(raw()), "a program's move of 0, 0")
+        Assert(!WinApi.EmptyMouse(raw(, 0x10041)), "a mouse's own report counts")
+        Assert(!WinApi.EmptyMouse(raw(,,,, 3)), "a move from a touchpad or remote desktop counts")
+        Assert(!WinApi.EmptyMouse(raw(,,,,, -1)))
+        Assert(!WinApi.EmptyMouse(raw(,,, 0x400)), "a scroll counts")
+        Assert(!WinApi.EmptyMouse(raw(,,, 0x1)), "a click counts")
+        Assert(!WinApi.EmptyMouse(raw(,, 1)), "a move to the top left corner counts")
+        Assert(!WinApi.EmptyMouse(raw(1)), "not a mouse")
+    }
+
+    static Test_the_latest_input_is_noted_as_the_players_unless_it_was_empty_or_ours() {
+        last := {tick: 30000}
+        Patches.Set(WinApi, "_LastInput", (*) => last.tick)
+        Patches.Value(WinApi, "playerInputTick", 5000)
+        Patches.Value(WinApi, "ownInputTick", 20000)
+        Patches.Value(WinApi, "emptyInputTick", 40000)
+        WinApi._NoteInput()
+        AssertEq(WinApi.playerInputTick, 30000)
+        last.tick := 40000  ; the empty signal
+        WinApi._NoteInput()
+        AssertEq(WinApi.playerInputTick, 30000)
+        last.tick := 20100  ; ours
+        WinApi._NoteInput()
+        AssertEq(WinApi.playerInputTick, 30000)
+        ; Nor does it count when we send input right after it.
+        last.tick := 40000
+        WinApi._Send([], "release")
+        AssertEq(WinApi.playerInputTick, 30000)
+    }
+
+    static Test_waits_watch_for_empty_mouse_signals_until_the_game_is_in_front() {
+        api := FakeWinApi()
+        game := GameWithWindow()
+        Assert(!game.Focus())
+        Assert(api.watching, "not watching while waiting for the PC to be left alone")
+        api.idle := HllGame.IDLE_BEFORE_TAKEOVER
+        Assert(game.Focus())
+        Assert(!api.watching, "still watching with the game in front")
+        api.front := 5678, api.idle := 0.0
+        Assert(!game.Focus())
+        Assert(api.watching)
+        game.Close()
+        Assert(!api.watching, "still watching after closing the game")
+    }
+
+    static Test_watching_for_empty_mouse_signals_turns_on_and_off() {
+        Patches.Value(WinApi, "watcher", "")
+        WinApi.WatchInput(true)
+        try {
+            Assert(WinApi.watcher, "Windows didn't take the raw input request")
+            WinApi.WatchInput(true)  ; already on
+            Assert(WinApi.watcher)
+        } finally
+            WinApi.WatchInput(false)
+        Assert(!WinApi.watcher)
+        WinApi.WatchInput(false)  ; already off
     }
 
     static Test_log_spans() {

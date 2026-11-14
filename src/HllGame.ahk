@@ -207,7 +207,9 @@ class HllGame {
     ; switch to). And when the game comes back to the front during a wait
     ; without SynSeeder (the player clicked it, or Windows switched to it
     ; because they minimised or closed their window), it sends nothing until
-    ; they've been still that long too.
+    ; they've been still that long too. During these waits a program's mouse
+    ; signal that does nothing, like the one the game sends every 50 s,
+    ; doesn't count as the mouse being used (see WinApi.WatchInput).
     Focus() {
         hwnd := this.Window()
         if !hwnd
@@ -251,6 +253,7 @@ class HllGame {
         } else {
             wait := free ? "busy" : "in use"
         }
+        WinApi.WatchInput(true)  ; so the game's own empty mouse signals don't look like someone at the PC
         if wait != this.focusWait {
             if wait = "refused" {
                 Logs.Warning("Couldn't bring the game to the front (" HllGame.ForegroundApp() " has it); "
@@ -329,6 +332,7 @@ class HllGame {
     }
 
     _InFront() {
+        WinApi.WatchInput(false)
         this.focusWait := ""
         this.altTapped := false
         this.switching := ""
@@ -343,6 +347,7 @@ class HllGame {
     ; start (Steam can take minutes to launch after an update). A stop
     ; request ends the watching, not the closing.
     Close(linger := 0) {
+        WinApi.WatchInput(false)
         deadline := this.clock.Now() + linger
         loop {
             pid := this.Pid()
