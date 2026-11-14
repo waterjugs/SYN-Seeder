@@ -73,7 +73,8 @@ python tools/crop_templates.py <dir>       # re-cut button images after a game p
 
 GitHub builds and tests every push. A tag like `v1.1.1` makes a draft
 release and scans its exe on VirusTotal; installed copies update only once
-it's published. Bump the version in `src/App.ahk` and `SynSeeder.ahk` first.
+it's published. Bump the version in `src/App.ahk` and `SynSeeder.ahk` first,
+and say what changed in [CHANGELOG.md](CHANGELOG.md): the release shows it.
 The exe downloads its button images and fonts from this repository and
 checks them against `src/ButtonFiles.ahk` and `src/FontFiles.ahk`. Settings
 live in `%APPDATA%\SynSeeder\config.json`.
