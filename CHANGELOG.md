@@ -28,5 +28,5 @@ Write each bullet on one line: the release page shows every line break.
 - Each day at the time you pick, it checks the server. Under 80 players? It opens the game, joins and makes its own squad.
 - Works with the game on Steam and on Epic.
 - At 80 players, it closes the game within 10 minutes.
-- **Ctrl+Alt+End** stops a run at any time.
+- **Ctrl+Alt+End** stops a run.
 - It updates itself when a new version comes out.
