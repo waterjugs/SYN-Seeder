@@ -32,6 +32,7 @@ class HllGame {
         this.switching := ""     ; how a switch to the game that's still restoring was made, for the log
         this.cameBack := false   ; the game came back to the front by itself during a wait, and the log said so
         this.hadFront := false   ; the game has been in front in this run
+        this.emptySeen := WinApi.emptySignals  ; programs' empty mouse signals skipped before this run, or logged
         ; True from a launch that timed out until the next one: the launcher
         ; can still start the game (see Runner.Seed).
         this.launchPending := false
@@ -160,6 +161,7 @@ class HllGame {
         uri := this.LaunchUri()
         this.clock.Check()  ; already asked to stop: don't start it
         Logs.Info("Launching the game via " uri)
+        WinApi.WatchInput(false)  ; not waiting for anyone now (the game closed during a wait)
         this.launchPending := false  ; this launch's own wait covers the last one's
         HllGame.Start(uri)
         timeout := timeout = "" ? this.config.launch_timeout : timeout
@@ -254,6 +256,11 @@ class HllGame {
             wait := free ? "busy" : "in use"
         }
         WinApi.WatchInput(true)  ; so the game's own empty mouse signals don't look like someone at the PC
+        if WinApi.emptySignals > this.emptySeen && this.emptySeen >= 0 {
+            Logs.Info("A program sent a mouse signal that does nothing (the game sends one every 50 s); "
+                . "it doesn't count as someone using the PC")
+            this.emptySeen := -1  ; once a run
+        }
         if wait != this.focusWait {
             if wait = "refused" {
                 Logs.Warning("Couldn't bring the game to the front (" HllGame.ForegroundApp() " has it); "

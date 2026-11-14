@@ -45,6 +45,17 @@ LogsWith(text) {
     return n
 }
 
+; A RAWINPUT for a mouse event: by default a program's move of 0, 0.
+RawMouse(type := 0, device := 0, flags := 0, buttons := 0, x := 0, y := 0, held := 0, extra := 0) {
+    buf := Buffer(8 + 2 * A_PtrSize + 24, 0)
+    mouse := 8 + 2 * A_PtrSize
+    NumPut("UInt", type, buf, 0), NumPut("Ptr", device, buf, 8)
+    NumPut("UShort", flags, buf, mouse), NumPut("UShort", buttons, buf, mouse + 4)
+    NumPut("UInt", held, buf, mouse + 8), NumPut("Int", x, buf, mouse + 12), NumPut("Int", y, buf, mouse + 16)
+    NumPut("UInt", extra, buf, mouse + 20)
+    return buf
+}
+
 HLLV := "3b51901c38644473a9cba942253b3a41:cc1ab2f4d934407c8f1e6463d9c1dbdf:d7361b7d6fa94097bcadeac4b1f785fb"
 
 ; What the Epic launcher listed on the test PC before HLL Vietnam was installed.
@@ -536,22 +547,90 @@ class GameTests {
     }
 
     static Test_only_a_programs_mouse_signal_that_does_nothing_is_empty() {
-        raw(type := 0, device := 0, flags := 0, buttons := 0, x := 0, y := 0) {
-            buf := Buffer(8 + 2 * A_PtrSize + 24, 0)
-            mouse := 8 + 2 * A_PtrSize
-            NumPut("UInt", type, buf, 0), NumPut("Ptr", device, buf, 8)
-            NumPut("UShort", flags, buf, mouse), NumPut("UShort", buttons, buf, mouse + 4)
-            NumPut("Int", x, buf, mouse + 12), NumPut("Int", y, buf, mouse + 16)
-            return buf
-        }
-        Assert(WinApi.EmptyMouse(raw()), "a program's move of 0, 0")
-        Assert(!WinApi.EmptyMouse(raw(, 0x10041)), "a mouse's own report counts")
-        Assert(!WinApi.EmptyMouse(raw(,,,, 3)), "a move from a touchpad or remote desktop counts")
-        Assert(!WinApi.EmptyMouse(raw(,,,,, -1)))
-        Assert(!WinApi.EmptyMouse(raw(,,, 0x400)), "a scroll counts")
-        Assert(!WinApi.EmptyMouse(raw(,,, 0x1)), "a click counts")
-        Assert(!WinApi.EmptyMouse(raw(,, 1)), "a move to the top left corner counts")
-        Assert(!WinApi.EmptyMouse(raw(1)), "not a mouse")
+        Assert(WinApi.EmptyMouse(RawMouse()), "a program's move of 0, 0")
+        Assert(!WinApi.EmptyMouse(RawMouse(, 0x10041)), "a mouse's own report counts")
+        Assert(!WinApi.EmptyMouse(RawMouse(,,,, 3)), "a move from a touchpad or remote desktop counts")
+        Assert(!WinApi.EmptyMouse(RawMouse(,,,,, -1)))
+        Assert(!WinApi.EmptyMouse(RawMouse(,,, 0x400)), "a scroll counts")
+        Assert(!WinApi.EmptyMouse(RawMouse(,,, 0x1)), "a click counts")
+        Assert(!WinApi.EmptyMouse(RawMouse(,, 1)), "a move to the top left corner counts")
+        Assert(!WinApi.EmptyMouse(RawMouse(1)), "not a mouse")
+        Assert(!WinApi.EmptyMouse(RawMouse(,,,,,, 1)), "a button held counts")
+        Assert(!WinApi.EmptyMouse(RawMouse(,,,,,,, 0xFF515700)), "touch or pen input counts")
+    }
+
+    static Test_a_mouse_event_notes_an_empty_signal_or_the_players_input() {
+        last := {tick: 90000}
+        Patches.Set(WinApi, "_LastInput", (*) => last.tick)
+        Patches.Value(WinApi, "emptyInputTick", "")
+        Patches.Value(WinApi, "emptySignals", 0)
+        Patches.Value(WinApi, "ownInputTick", "")
+        Patches.Value(WinApi, "playerInputTick", 5000)
+        WinApi._MouseEvent(RawMouse(), 90000)  ; the latest input is this signal
+        AssertEq(WinApi.emptyInputTick, 90000)
+        AssertEq(WinApi.emptySignals, 1)
+        last.tick := 140002  ; Windows' two times for it a little apart
+        WinApi._MouseEvent(RawMouse(), 140000)
+        AssertEq(WinApi.emptyInputTick, 140002)
+        last.tick := 189998
+        WinApi._MouseEvent(RawMouse(), 190000)
+        AssertEq(WinApi.emptyInputTick, 189998)
+        last.tick := 240300  ; a key press came after the signal, before we got it: that one counts
+        WinApi._MouseEvent(RawMouse(), 240000)
+        AssertEq(WinApi.emptyInputTick, 189998)
+        AssertEq(WinApi.emptySignals, 3)
+        last.tick := 290000  ; no time known
+        WinApi._MouseEvent(RawMouse(), 0)
+        AssertEq(WinApi.emptyInputTick, 290000)
+        AssertEq(WinApi.playerInputTick, 5000)
+        ; Any other mouse event is the player's, now.
+        before := A_TickCount & 0xFFFFFFFF
+        WinApi._MouseEvent(RawMouse(, 0x10041), 300000)
+        Assert(((WinApi.playerInputTick - before) & 0xFFFFFFFF) < 1000, "a real mouse event wasn't noted: " WinApi.playerInputTick)
+        ; but not our own.
+        Patches.Value(WinApi, "playerInputTick", 5000)
+        Patches.Value(WinApi, "ownInputTick", A_TickCount & 0xFFFFFFFF)
+        WinApi._MouseEvent(RawMouse(,,,, 5), 300000)
+        AssertEq(WinApi.playerInputTick, 5000)
+    }
+
+    static Test_idle_time_skips_the_empty_signal() {
+        now := DllCall("GetTickCount", "UInt")
+        signal := (now - 20000) & 0xFFFFFFFF
+        Patches.Set(WinApi, "_LastInput", (*) => signal)
+        Patches.Value(WinApi, "ownInputTick", "")
+        Patches.Value(WinApi, "playerInputTick", (now - 400000) & 0xFFFFFFFF)
+        Patches.Value(WinApi, "emptyInputTick", signal)
+        idle := WinApi.UserIdleSeconds()
+        Assert(idle >= 400 && idle < 405, "counted from the signal, not the player's input: " idle)
+        Patches.Value(WinApi, "emptyInputTick", "")
+        idle := WinApi.UserIdleSeconds()
+        Assert(idle >= 20 && idle < 25, "not watching: the signal counts: " idle)
+    }
+
+    static Test_says_once_a_run_that_empty_signals_dont_count() {
+        api := FakeWinApi()
+        Patches.Value(WinApi, "emptySignals", 4)  ; from an earlier run
+        game := GameWithWindow()
+        Logs.capture := []
+        Assert(!game.Focus())
+        AssertEq(LogsWith("doesn't count as someone using the PC"), 0)
+        WinApi.emptySignals := 5
+        Assert(!game.Focus())
+        WinApi.emptySignals := 6
+        Assert(!game.Focus())
+        AssertEq(LogsWith("A program sent a mouse signal that does nothing (the game sends one every 50 s); it doesn't count as someone using the PC"), 1)
+    }
+
+    static Test_a_relaunch_stops_watching() {
+        api := FakeWinApi()
+        Patches.Set(HllGame, "Start", (*) => "")
+        api.watching := true  ; the game closed during a wait
+        game := HllGame(SeederConfig(), StoppingClock(10), FakeClock())
+        game.DefineProp("Window", {Call: (*) => 0})
+        game.DefineProp("Pid", {Call: (*) => 0})
+        AssertThrows(SeedStopped, () => game.Launch(300))
+        Assert(!api.watching)
     }
 
     static Test_the_latest_input_is_noted_as_the_players_unless_it_was_empty_or_ours() {
@@ -590,15 +669,29 @@ class GameTests {
     }
 
     static Test_watching_for_empty_mouse_signals_turns_on_and_off() {
+        registered() {
+            n := 0, size := 8 + A_PtrSize
+            DllCall("GetRegisteredRawInputDevices", "Ptr", 0, "UInt*", &n, "UInt", size)
+            list := Buffer(Max(n, 1) * size, 0)
+            if n && DllCall("GetRegisteredRawInputDevices", "Ptr", list, "UInt*", &n, "UInt", size, "Int") != n
+                return "couldn't read the list"
+            out := []
+            loop n
+                out.Push(Format("{}/{} {:#x} {}", NumGet(list, (A_Index - 1) * size, "UShort"), NumGet(list, (A_Index - 1) * size + 2, "UShort"),
+                    NumGet(list, (A_Index - 1) * size + 4, "UInt"), NumGet(list, (A_Index - 1) * size + 8, "Ptr") = A_ScriptHwnd ? "ours" : "other"))
+            return out
+        }
         Patches.Value(WinApi, "watcher", "")
         WinApi.WatchInput(true)
         try {
             Assert(WinApi.watcher, "Windows didn't take the raw input request")
+            AssertEq(registered(), ["1/2 0x100 ours"])  ; the mouse, in the background, to our window
             WinApi.WatchInput(true)  ; already on
             Assert(WinApi.watcher)
         } finally
             WinApi.WatchInput(false)
         Assert(!WinApi.watcher)
+        AssertEq(registered(), [])
         WinApi.WatchInput(false)  ; already off
     }
 

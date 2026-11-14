@@ -14,9 +14,9 @@ class WinApi {
     static ownInputTick := ""
     static playerInputTick := ""
     static OWN_INPUT_SLACK_MS := 250  ; how long after we send input Windows may stamp it
-    ; Other programs can send input that does nothing, too: games built on
-    ; Unreal Engine, Hell Let Loose: Vietnam among them, send a mouse signal
-    ; that doesn't move the pointer every 50 s, to keep the screensaver off.
+    ; Other programs can send input that does nothing, too: Hell Let Loose:
+    ; Vietnam sends a mouse signal that doesn't move the pointer every 50 s
+    ; (to keep the screensaver off, as games built on Unreal Engine do).
     ; Windows counts it as input, so the PC would never look idle while the
     ; game is open. While WatchInput is on, this is the time Windows gave the
     ; latest such signal, which UserIdleSeconds then skips.
@@ -65,11 +65,15 @@ class WinApi {
 
     ; Turns on or off watching for programs' empty mouse signals, used while
     ; the seeder waits for the PC to be left alone. It asks Windows for raw
-    ; input from the mouse only, never the keyboard, and of each mouse event
-    ; looks only at whether a program sent it and whether it did anything;
-    ; it keeps nothing but the time of the latest empty one. While on, it
-    ; also notes the latest input every second, so a signal can't hide the
-    ; player's typing from just before it.
+    ; input from the mouse only, never the keyboard. Of each mouse event it
+    ; looks only at whether Windows names a device for it (a mouse, or a
+    ; touchpad that reports as one) and whether it moved, clicked or
+    ; scrolled anything, and it keeps nothing but times: of the latest empty
+    ; signal, and of the latest other mouse event as the player's input.
+    ; While on, it also notes the latest input every NOTE_MS, so a signal
+    ; is unlikely to hide a key press made just before it (Windows keeps
+    ; only the time of the latest input).
+    static NOTE_MS := 100
     static WatchInput(on) {
         if !on = !WinApi.watcher
             return
@@ -80,7 +84,7 @@ class WinApi {
                 return  ; empty signals count as input then, as they did before
             WinApi.watcher := {input: ObjBindMethod(WinApi, "_OnRawInput"), note: ObjBindMethod(WinApi, "_NoteInput")}
             OnMessage(0xFF, WinApi.watcher.input)  ; WM_INPUT
-            SetTimer(WinApi.watcher.note, 1000)
+            SetTimer(WinApi.watcher.note, WinApi.NOTE_MS)
         } else {
             DllCall("RegisterRawInputDevices", "Ptr", rid, "UInt", 1, "UInt", rid.Size)
             OnMessage(0xFF, WinApi.watcher.input, 0)
@@ -89,25 +93,54 @@ class WinApi {
         }
     }
 
+    ; WM_INPUT, for every mouse event while watching: kept short, as a fast
+    ; mouse sends hundreds a second.
     static _OnRawInput(wParam, lParam, *) {
-        header := 8 + 2 * A_PtrSize  ; RAWINPUTHEADER
-        size := header + 24          ; then RAWMOUSE
-        raw := Buffer(size, 0)
-        if DllCall("GetRawInputData", "Ptr", lParam, "UInt", 0x10000003, "Ptr", raw, "UInt*", &size, "UInt", header, "UInt") = 0xFFFFFFFF  ; RID_INPUT
-            return
-        if WinApi.EmptyMouse(raw)
-            WinApi.emptyInputTick := WinApi._LastInput()
+        static header := 8 + 2 * A_PtrSize  ; RAWINPUTHEADER, then RAWMOUSE
+        static raw := Buffer(header + 24, 0)
+        static read := DllCall("GetProcAddress", "Ptr", DllCall("GetModuleHandle", "Str", "user32", "Ptr"),
+            "AStr", "GetRawInputData", "Ptr")
+        sent := A_EventInfo  ; when the event happened: the message's time
+        size := raw.Size
+        if DllCall(read, "Ptr", lParam, "UInt", 0x10000003, "Ptr", raw, "UInt*", &size, "UInt", header, "UInt") != 0xFFFFFFFF  ; RID_INPUT
+            WinApi._MouseEvent(raw, sent)
     }
 
-    ; True if ``raw`` (a RAWINPUT) is a mouse event that a program sent, not
-    ; a mouse or touchpad, and that moves, presses, releases and scrolls nothing.
+    ; Notes what the mouse event ``raw`` (a RAWINPUT) says about the player.
+    ; ``sent`` is the GetTickCount() time it happened at, or 0 if unknown.
+    static _MouseEvent(raw, sent) {
+        if !WinApi.EmptyMouse(raw) {
+            now := A_TickCount & 0xFFFFFFFF  ; just after it happened: errs on the side of someone being there
+            if !WinApi._Ours(now, WinApi.ownInputTick)
+                WinApi.playerInputTick := now
+            return
+        }
+        ; Mark the latest input as empty only if it's this signal, not a key
+        ; press made between the signal and now (that one still counts).
+        last := WinApi._LastInput()
+        gap := last != "" && sent ? (last - sent) & 0xFFFFFFFF : 0
+        if last != "" && (gap <= WinApi.SAME_INPUT_MS || gap >= 0x100000000 - WinApi.SAME_INPUT_MS) {
+            WinApi.emptyInputTick := last
+            WinApi.emptySignals++
+        }
+    }
+    static SAME_INPUT_MS := 50  ; how far apart Windows' two times for one input may be
+    static emptySignals := 0    ; empty signals skipped so far, for the log
+
+    ; True if ``raw`` (a RAWINPUT) is a mouse event that came from no device
+    ; Windows names (a program sent it, as touch screens, pens, some
+    ; touchpads and remote-control tools do too) and that moves, presses,
+    ; releases and scrolls nothing, with no extra information attached
+    ; (Windows marks touch and pen input that way).
     static EmptyMouse(raw) {
         mouse := 8 + 2 * A_PtrSize  ; RAWMOUSE, after the header
         return NumGet(raw, 0, "UInt") = 0        ; RIM_TYPEMOUSE
             && !NumGet(raw, 8, "Ptr")            ; no device
             && !(NumGet(raw, mouse, "UShort") & 1)  ; a relative move, not to a point on the screen
             && !NumGet(raw, mouse + 4, "UShort")    ; no button or wheel
+            && !NumGet(raw, mouse + 8, "UInt")      ; no buttons held
             && !NumGet(raw, mouse + 12, "Int") && !NumGet(raw, mouse + 16, "Int")  ; no movement
+            && !NumGet(raw, mouse + 20, "UInt")     ; no extra information
     }
 
     static SetInputTarget(hwnd) => WinApi.inputTarget := hwnd
