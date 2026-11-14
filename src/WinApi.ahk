@@ -14,6 +14,14 @@ class WinApi {
     static ownInputTick := ""
     static playerInputTick := ""
     static OWN_INPUT_SLACK_MS := 250  ; how long after we send input Windows may stamp it
+    ; Other programs can send input that does nothing, too: games built on
+    ; Unreal Engine, Hell Let Loose: Vietnam among them, send a mouse signal
+    ; that doesn't move the pointer every 50 s, to keep the screensaver off.
+    ; Windows counts it as input, so the PC would never look idle while the
+    ; game is open. While WatchInput is on, this is the time Windows gave the
+    ; latest such signal, which UserIdleSeconds then skips.
+    static emptyInputTick := ""
+    static watcher := ""  ; WatchInput's message handler and timer, while on
     ; The window our input is for (the game, set by Focus). Input is dropped
     ; if another window has come to the front since, e.g. the player clicked
     ; back into their browser halfway through typing the server name.
@@ -43,9 +51,63 @@ class WinApi {
     ; makes the PC look busy for longer.
     static _MarkOwnInput(switched := false) {
         last := WinApi._LastInput()
-        if last != "" && (switched || !WinApi._Ours(last, WinApi.ownInputTick))
+        if last != "" && last != WinApi.emptyInputTick && (switched || !WinApi._Ours(last, WinApi.ownInputTick))
             WinApi.playerInputTick := last
         WinApi.ownInputTick := DllCall("GetTickCount", "UInt")
+    }
+
+    ; Notes the latest input as the player's, unless it was ours or an empty signal.
+    static _NoteInput() {
+        last := WinApi._LastInput()
+        if last != "" && last != WinApi.emptyInputTick && !WinApi._Ours(last, WinApi.ownInputTick)
+            WinApi.playerInputTick := last
+    }
+
+    ; Turns on or off watching for programs' empty mouse signals, used while
+    ; the seeder waits for the PC to be left alone. It asks Windows for raw
+    ; input from the mouse only, never the keyboard, and of each mouse event
+    ; looks only at whether a program sent it and whether it did anything;
+    ; it keeps nothing but the time of the latest empty one. While on, it
+    ; also notes the latest input every second, so a signal can't hide the
+    ; player's typing from just before it.
+    static WatchInput(on) {
+        if !on = !WinApi.watcher
+            return
+        rid := Buffer(8 + A_PtrSize, 0)  ; RAWINPUTDEVICE: the mouse, sent to our hidden window even when it isn't in front
+        NumPut("UShort", 1, "UShort", 2, "UInt", on ? 0x100 : 0x1, "Ptr", on ? A_ScriptHwnd : 0, rid)  ; RIDEV_INPUTSINK, RIDEV_REMOVE
+        if on {
+            if !DllCall("RegisterRawInputDevices", "Ptr", rid, "UInt", 1, "UInt", rid.Size)
+                return  ; empty signals count as input then, as they did before
+            WinApi.watcher := {input: ObjBindMethod(WinApi, "_OnRawInput"), note: ObjBindMethod(WinApi, "_NoteInput")}
+            OnMessage(0xFF, WinApi.watcher.input)  ; WM_INPUT
+            SetTimer(WinApi.watcher.note, 1000)
+        } else {
+            DllCall("RegisterRawInputDevices", "Ptr", rid, "UInt", 1, "UInt", rid.Size)
+            OnMessage(0xFF, WinApi.watcher.input, 0)
+            SetTimer(WinApi.watcher.note, 0)
+            WinApi.watcher := ""
+        }
+    }
+
+    static _OnRawInput(wParam, lParam, *) {
+        header := 8 + 2 * A_PtrSize  ; RAWINPUTHEADER
+        size := header + 24          ; then RAWMOUSE
+        raw := Buffer(size, 0)
+        if DllCall("GetRawInputData", "Ptr", lParam, "UInt", 0x10000003, "Ptr", raw, "UInt*", &size, "UInt", header, "UInt") = 0xFFFFFFFF  ; RID_INPUT
+            return
+        if WinApi.EmptyMouse(raw)
+            WinApi.emptyInputTick := WinApi._LastInput()
+    }
+
+    ; True if ``raw`` (a RAWINPUT) is a mouse event that a program sent, not
+    ; a mouse or touchpad, and that moves, presses, releases and scrolls nothing.
+    static EmptyMouse(raw) {
+        mouse := 8 + 2 * A_PtrSize  ; RAWMOUSE, after the header
+        return NumGet(raw, 0, "UInt") = 0        ; RIM_TYPEMOUSE
+            && !NumGet(raw, 8, "Ptr")            ; no device
+            && !(NumGet(raw, mouse, "UShort") & 1)  ; a relative move, not to a point on the screen
+            && !NumGet(raw, mouse + 4, "UShort")    ; no button or wheel
+            && !NumGet(raw, mouse + 12, "Int") && !NumGet(raw, mouse + 16, "Int")  ; no movement
     }
 
     static SetInputTarget(hwnd) => WinApi.inputTarget := hwnd
@@ -193,19 +255,25 @@ class WinApi {
         return false
     }
 
-    ; Seconds since the player last used the mouse or keyboard; the seeder's own input doesn't count.
+    ; Seconds since the player last used the mouse or keyboard; the seeder's
+    ; own input doesn't count, nor, while WatchInput is on, a program's empty
+    ; mouse signals.
     static UserIdleSeconds() {
+        WinApi._NoteInput()
         last := WinApi._LastInput()
         if last = ""
             return 0.0
-        return WinApi.IdleMs(DllCall("GetTickCount", "UInt"), last, WinApi.ownInputTick, WinApi.playerInputTick) / 1000
+        return WinApi.IdleMs(DllCall("GetTickCount", "UInt"), last, WinApi.ownInputTick, WinApi.playerInputTick,
+            WinApi.emptyInputTick) / 1000
     }
 
     ; Milliseconds of player inactivity from GetTickCount() values, which wrap
     ; around every 49.7 days.
-    static IdleMs(now, lastInput, ownInput, playerInput) {
+    static IdleMs(now, lastInput, ownInput, playerInput, emptyInput := "") {
         if WinApi._Ours(lastInput, ownInput)  ; the latest input was ours; the player's came before it
             lastInput := playerInput != "" ? playerInput : ownInput
+        else if lastInput = emptyInput && playerInput != ""  ; a program's empty signal
+            lastInput := playerInput
         idle := (now - lastInput) & 0xFFFFFFFF
         ; Another program's SendInput can stamp input with its own time, even
         ; one a little ahead of now: that's input just now, not 49 days ago.

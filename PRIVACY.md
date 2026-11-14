@@ -1,6 +1,6 @@
 # SynSeeder Privacy Policy
 
-Last updated: 9 November 2026
+Last updated: 14 November 2026
 
 **New in version 1.1.0:** an optional **Seed when pinged** setting and a SynSeeder bot for Discord. That version won't come out before 23 November 2026. The parts of this policy about the bot apply as soon as it's added to the SYNDICATE Discord server, and the parts about Seed when pinged apply only from version 1.1.0 on.
 
@@ -35,6 +35,7 @@ To play the game, SynSeeder reads a few things on your PC as it goes. It uses th
 - **The game's picture.** Every couple of seconds while joining, and about every 30 seconds once in, it captures the area where the game is drawn (or your whole main screen, if it can't find the game window) and compares it with pictures of the game's buttons. It keeps only a grey, shrunk copy of each capture in memory, until the next capture replaces it.
 - **Running programs.** It reads the names of running programs to find the game, and looks for SynSeeder's own hidden windows to find other SynSeeder runs (so it never runs twice and Stop seeding works). When another window keeps the game from coming to the front, it notes that program's name in the log.
 - **How long since you last used the mouse or keyboard.** Windows reports only the time of the last input, never what you typed or clicked. SynSeeder uses it to wait until you've left the PC alone before bringing the game to the front: 5 minutes while another program's window is in front, or 10 seconds while none is (15 seconds in every case before version 1.1.0). It also waits until you've left it alone for 10 seconds before it carries on when the game comes back to the front some other way, such as when you click it. With Seed when pinged on, it also uses it to start a seed-call run on its own only if you haven't touched the mouse or keyboard for 5 minutes.
+- **Which mouse signals come from a program,** from version 1.1.0, and only while it waits for you to leave the PC alone. The game sends Windows a mouse signal every 50 seconds that doesn't move the pointer, to keep the screensaver off, and Windows counts it as you using the mouse. So while it waits, SynSeeder asks Windows to tell it about each mouse event and checks only two things: whether it came from a mouse or touchpad or from a program, and whether it moved, clicked or scrolled anything. If a program sent it and it did nothing, SynSeeder doesn't count it. It doesn't keep where the pointer went or what you clicked, and it never does this with the keyboard.
 - **Whether something is full screen,** only with Seed when pinged on. Windows says only whether a full-screen program or a presentation is on, not which program. If one is, SynSeeder asks you before a seed call starts the game.
 - **The Ctrl+Alt+End shortcut.** It registers this one shortcut to stop a run. Windows tells it only when that exact shortcut is pressed; it doesn't see any other keys.
 - **Your keyboard layout,** so it presses the right keys on any layout.
