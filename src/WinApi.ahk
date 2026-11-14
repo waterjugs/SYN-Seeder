@@ -121,11 +121,12 @@ class WinApi {
         gap := last != "" && sent ? (last - sent) & 0xFFFFFFFF : 0
         if last != "" && (gap <= WinApi.SAME_INPUT_MS || gap >= 0x100000000 - WinApi.SAME_INPUT_MS) {
             WinApi.emptyInputTick := last
-            WinApi.emptySignals++
+            if !WinApi._Ours(last, WinApi.ownInputTick)  ; ForceToFront's nudge looks just the same
+                WinApi.emptySignals++
         }
     }
     static SAME_INPUT_MS := 50  ; how far apart Windows' two times for one input may be
-    static emptySignals := 0    ; empty signals skipped so far, for the log
+    static emptySignals := 0    ; other programs' empty signals skipped so far, for the log
 
     ; True if ``raw`` (a RAWINPUT) is a mouse event that came from no device
     ; Windows names (a program sent it, as touch screens, pens, some

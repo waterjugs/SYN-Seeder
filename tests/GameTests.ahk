@@ -592,6 +592,12 @@ class GameTests {
         Patches.Value(WinApi, "ownInputTick", A_TickCount & 0xFFFFFFFF)
         WinApi._MouseEvent(RawMouse(,,,, 5), 300000)
         AssertEq(WinApi.playerInputTick, 5000)
+        ; ForceToFront's nudge is empty too, but isn't another program's signal for the log.
+        signals := WinApi.emptySignals
+        last.tick := WinApi.ownInputTick
+        WinApi._MouseEvent(RawMouse(), last.tick)
+        AssertEq(WinApi.emptyInputTick, last.tick)
+        AssertEq(WinApi.emptySignals, signals)
     }
 
     static Test_idle_time_skips_the_empty_signal() {
