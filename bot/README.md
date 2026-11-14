@@ -327,7 +327,8 @@ be refusing Cloudflare. Tell Claude.
   fails, nothing is deployed and the old version keeps running. The IDs and
   the Public Key stay where they are.
 - **Logs stay off.** Don't turn on Workers Logs or Traces for this Worker. The
-  Privacy Policy says they're off, and changing that needs 14 days' notice.
+  Privacy Policy says they're off, so update the Privacy Policy first if you
+  ever need them.
 - **If the bot is down,** /seed shows "The application did not respond" and PCs
   see no call. Nothing else breaks. If Discord emails or messages you that it
   removed your Interactions Endpoint URL, redo step 5 once the bot's address

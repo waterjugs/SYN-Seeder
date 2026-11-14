@@ -1,8 +1,10 @@
 # SynSeeder Privacy Policy
 
-Last updated: 9 November 2026
+Last updated: 14 November 2026
 
-**New in version 1.1.0:** an optional **Seed when pinged** setting and a SynSeeder bot for Discord. That version won't come out before 23 November 2026. The parts of this policy about the bot apply as soon as it's added to the SYNDICATE Discord server, and the parts about Seed when pinged apply only from version 1.1.0 on.
+**New in version 1.1.0:** an optional **Seed when pinged** setting and a SynSeeder bot for Discord. The parts of this policy about the bot apply as soon as it's added to the SYNDICATE Discord server, and the parts about Seed when pinged apply only from version 1.1.0 on.
+
+**Changed on 14 November 2026:** there's no 14-day wait any more. When the app, the seed-call service or the bot will collect, keep or send something new, we'll update this policy by the time the change happens.
 
 SynSeeder doesn't send us your name, your files or anything you type, and it doesn't sell your information. It has no accounts, ads, analytics or crash reporting, and it never uploads your files. Like anything that goes online, it shows your IP address to the sites it talks to: the server's stats page, for the player count, and GitHub, to download the pictures and fonts SynSeeder uses and to check for and download updates. If you tick **Seed when pinged**, it also checks about once a minute whether someone has called a seed on Discord. It asks a small service that we run on Cloudflare, which sees your IP address and the time, like any website. We keep no record of them, though Cloudflare may keep its own for a while (see [What goes over the internet](#what-goes-over-the-internet)). If you use **/seed** on Discord, our bot gets your Discord ID, names and roles from Discord. It uses them on the spot to check you may call a seed and keeps no copy. Its reply in the channel doesn't name you, but Discord shows who used /seed above it, as it does for any command. Everything SynSeeder saves (settings, a log and the occasional screenshot) stays in folders on your own PC until you delete it.
 
@@ -110,7 +112,7 @@ Unless you've sent us files, we never receive any of this, so there's nothing to
 
 **Children.** SynSeeder and its bot aren't meant for children. Use the app, and /seed, only if you're 18 or older. The Syngineers role, which /seed needs, should go only to adults.
 
-**Changes.** If the app, the seed-call service or the bot will collect, keep or send anything new, we'll update this policy at least 14 days before the change. That includes turning the service's request logs back on. We'll change the date at the top, add a note there saying what's coming, and say so in the release notes when it comes out. Updates install themselves, so check this page now and then, or turn updates off if you'd rather decide for yourself.
+**Changes.** If the app, the seed-call service or the bot will collect, keep or send anything new, we'll update this policy and the date at the top by the time the change happens. That includes turning the service's request logs back on. Updates install themselves, so check this page now and then, or turn updates off if you'd rather decide for yourself.
 
 **Contact.** Questions about this policy: open an issue at [github.com/waterjugs/SYN-Seeder/issues](https://github.com/waterjugs/SYN-Seeder/issues). For anything about your own files, message us privately on [Discord](https://discord.com/users/132721731096936448) instead. Issues are public, so don't paste your log or screenshots there without checking them first. To report a problem with the bot, or someone misusing /seed, open an issue or message us on Discord. We read every report and act on the ones that need it.
 
