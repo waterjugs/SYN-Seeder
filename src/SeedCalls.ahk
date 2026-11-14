@@ -15,8 +15,8 @@
 ; after 3 seed-call runs in a day, within 30 minutes of the last one, for
 ; a few minutes after the service couldn't be reached, and for the rest of
 ; the day after finding seed-calls.json broken. TERMS.md and
-; PRIVACY.md promise all of this and what seed-calls.json holds: change them,
-; at least 14 days ahead, before changing what it does.
+; PRIVACY.md promise all of this and what seed-calls.json holds: update them
+; along with any change to what it does.
 
 class SeedCalls {
     ; The bot's service. Every copy of the app has this address built in, so
