@@ -1,8 +1,10 @@
 # SynSeeder Terms of Service
 
-Last updated: 9 November 2026
+Last updated: 14 November 2026
 
-**New in version 1.1.0:** an optional **Seed when pinged** setting and a SynSeeder bot for Discord. That version won't come out before 23 November 2026. The parts of these terms about them apply only from version 1.1.0 on.
+**New in version 1.1.0:** an optional **Seed when pinged** setting and a SynSeeder bot for Discord. The parts of these terms about them apply only from version 1.1.0 on.
+
+**Changed on 14 November 2026:** changes to these terms now apply from the date at the top. There's no 14-day wait any more.
 
 SynSeeder is a free, unofficial tool that plays Hell Let Loose: Vietnam for you so a community server fills up. By running it, you agree to these terms. The short version:
 
@@ -90,7 +92,7 @@ Some places don't allow these exclusions or limits. There, they apply only as fa
 
 **Updates.** Updates are on unless you turn them off. Before each run, SynSeeder checks its GitHub releases for a newer version. If there is one, it downloads it, installs it and carries on the run with the new version, without asking you first. An update can change anything the app does, including what section 2 describes. SynSeeder checks that each download arrived whole and matches what GitHub lists for it, but it can't tell whether a release itself is safe, and the app isn't code-signed. If you'd rather check each version yourself, turn updates off (the Privacy Policy says how); you then won't get fixes after a game patch.
 
-**Changes to SynSeeder and these terms.** We may change SynSeeder, its seed-call service or the bot, or stop offering them, at any time. We may also change these terms. When we do, we'll change the date at the top, add a note there saying what's coming, and say so in the release notes when it comes out. The new terms apply 14 days after that date, so you have time to stop if you don't agree. Updates install themselves, so you won't see the release notes unless you look; check the SynSeeder GitHub page now and then. Using SynSeeder after the new terms apply means you accept them.
+**Changes to SynSeeder and these terms.** We may change SynSeeder, its seed-call service or the bot, or stop offering them, at any time. We may also change these terms. When we do, we'll change the date at the top, and the new terms apply from that date. Updates install themselves, so check these terms now and then. If you don't agree with a change, stop using SynSeeder (see **Stopping** below). Using it after a change means you accept the new terms.
 
 **Stopping.** You can stop using SynSeeder at any time: untick **Seed automatically** and **Seed when pinged**, press **Save**, then delete the app and its folders (the Privacy Policy lists them). We can end your permission to use it if you break these terms. Sections 5, 6 and 7 still apply after that.
 
