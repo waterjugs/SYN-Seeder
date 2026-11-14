@@ -32,6 +32,7 @@ class HllGame {
         this.switching := ""     ; how a switch to the game that's still restoring was made, for the log
         this.cameBack := false   ; the game came back to the front by itself during a wait, and the log said so
         this.hadFront := false   ; the game has been in front in this run
+        this.emptySeen := WinApi.emptySignals  ; programs' empty mouse signals skipped before this run, or logged
         ; True from a launch that timed out until the next one: the launcher
         ; can still start the game (see Runner.Seed).
         this.launchPending := false
@@ -160,6 +161,7 @@ class HllGame {
         uri := this.LaunchUri()
         this.clock.Check()  ; already asked to stop: don't start it
         Logs.Info("Launching the game via " uri)
+        WinApi.WatchInput(false)  ; not waiting for anyone now (the game closed during a wait)
         this.launchPending := false  ; this launch's own wait covers the last one's
         HllGame.Start(uri)
         timeout := timeout = "" ? this.config.launch_timeout : timeout
@@ -207,7 +209,9 @@ class HllGame {
     ; switch to). And when the game comes back to the front during a wait
     ; without SynSeeder (the player clicked it, or Windows switched to it
     ; because they minimised or closed their window), it sends nothing until
-    ; they've been still that long too.
+    ; they've been still that long too. During these waits a program's mouse
+    ; signal that does nothing, like the one the game sends every 50 s,
+    ; doesn't count as the mouse being used (see WinApi.WatchInput).
     Focus() {
         hwnd := this.Window()
         if !hwnd
@@ -250,6 +254,12 @@ class HllGame {
             wait := "refused"
         } else {
             wait := free ? "busy" : "in use"
+        }
+        WinApi.WatchInput(true)  ; so the game's own empty mouse signals don't look like someone at the PC
+        if WinApi.emptySignals > this.emptySeen && this.emptySeen >= 0 {
+            Logs.Info("A program sent a mouse signal that does nothing (the game sends one every 50 s); "
+                . "it doesn't count as someone using the PC")
+            this.emptySeen := -1  ; once a run
         }
         if wait != this.focusWait {
             if wait = "refused" {
@@ -329,6 +339,7 @@ class HllGame {
     }
 
     _InFront() {
+        WinApi.WatchInput(false)
         this.focusWait := ""
         this.altTapped := false
         this.switching := ""
@@ -343,6 +354,7 @@ class HllGame {
     ; start (Steam can take minutes to launch after an update). A stop
     ; request ends the watching, not the closing.
     Close(linger := 0) {
+        WinApi.WatchInput(false)
         deadline := this.clock.Now() + linger
         loop {
             pid := this.Pid()
